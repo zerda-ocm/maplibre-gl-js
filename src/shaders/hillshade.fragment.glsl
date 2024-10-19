@@ -35,6 +35,8 @@ void main() {
     float maxValue = 0.5 * PI;
     float scaledSlope = intensity != 0.5 ? ((pow(base, slope) - 1.0) / (pow(base, maxValue) - 1.0)) * maxValue : slope;
 
+    float elevation = 1.0 - pixel.b;
+
     // The accent color is calculated with the cosine of the slope while the shade color is calculated with the sine
     // so that the accent color's rate of change eases in while the shade color's eases out.
     float accent = cos(scaledSlope);
@@ -45,10 +47,8 @@ void main() {
     float shade = abs(mod((aspect + azimuth) / PI + 0.5, 2.0) - 1.0);
     vec4 shade_color = mix(u_shadow, u_highlight, shade) * sin(scaledSlope) * clamp(intensity * 2.0, 0.0, 1.0);
 
-    // Normalizing the elevation
-    float elevation = 1.0 - pixel.b;
-    float darkeningFactor = clamp(elevation*0.5, 0.0, 1.0);
-    vec4 finalColor = (accent_color * (1.0 - shade_color.a) + shade_color);
+    float darkeningFactor = clamp(elevation*0.7, 0.0, 1.0);
+    vec4 finalColor = (accent_color * (1.0 - shade_color.a) + shade_color) * (1.0 - (elevation * 0.7));
     finalColor = mix(finalColor, vec4(0.0,0.13,0.7,1.0), vec4(darkeningFactor));
     fragColor = finalColor;
     
