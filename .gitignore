@@ -41,4 +41,4 @@ npm-debug.log
 .*.swp
 junit.xml
 KEYCHANGES.md
-build-sh
+build.sh

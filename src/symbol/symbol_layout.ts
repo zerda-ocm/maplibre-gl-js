@@ -299,13 +299,10 @@ function addFeature(bucket: SymbolBucket,
     // to use a text-size value that is the same for all zoom levels.
     // bucket calculates text-size at a high zoom level so that all tiles can
     // use the same value when calculating anchor positions.
-    // ZERDA start
-    const textMaxSize = layoutTextSize / 2;
-    //let textMaxSize = sizes.textMaxSize.evaluate(feature, {});
-    //if (textMaxSize === undefined) {
-    //    textMaxSize = layoutTextSize;
-    //}
-    // ZERDA end
+    let textMaxSize = sizes.textMaxSize.evaluate(feature, {});
+    if (textMaxSize === undefined) {
+        textMaxSize = layoutTextSize;
+    }
     const layout = bucket.layers[0].layout;
     const iconOffset = layout.get('icon-offset').evaluate(feature, {}, canonical);
     const defaultHorizontalShaping = getDefaultHorizontalShaping(shapedTextOrientations.horizontal);
@@ -540,6 +537,7 @@ function addSymbol(bucket: SymbolBucket,
     layoutTextSize: number) {
 
     const lineArray = bucket.addToLineVertexArray(anchor, line);
+
     let textCollisionFeature, iconCollisionFeature, verticalTextCollisionFeature, verticalIconCollisionFeature;
 
     let numIconVertices = 0;

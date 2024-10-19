@@ -5,6 +5,7 @@ import {ResolvedImage, Formatted, FormattedSection} from '@maplibre/maplibre-gl-
 import {ImagePosition} from '../../../src/render/image_atlas';
 import type {StyleImage} from '../../../src/style/style_image';
 import type {StyleGlyph} from '../../../src/style/style_glyph';
+
 import glyphsJson from '../assets/glyphs/fontstack-glyphs.json' with {type: 'json'};
 import expectedJson from './tests/text-shaping-linebreak.json' with {type: 'json'};
 import expectedImagesHorizontal from './tests/text-shaping-images-horizontal.json' with {type: 'json'};

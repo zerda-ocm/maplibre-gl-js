@@ -68,10 +68,7 @@ export function drawLine(painter: Painter, sourceCache: SourceCache, layer: Line
         }
 
         const projectionData = transform.getProjectionData(coord);
-        //ZERDA: keep pixelRation constant. otherwise lines would scale when globe is pitched.
-        //TODO: needs checking if pixelRatio is influenced for example by high display resolutions
-        //const pixelRatio = transform.getPixelScale();
-        const pixelRatio = 1;
+        const pixelRatio = transform.getPixelScale();
 
         const uniformValues = image ? linePatternUniformValues(painter, tile, layer, pixelRatio, crossfade) :
             dasharray ? lineSDFUniformValues(painter, tile, layer, pixelRatio, dasharray, crossfade) :

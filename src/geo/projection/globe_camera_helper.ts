@@ -156,9 +156,7 @@ export class GlobeCameraHelper implements ICameraHelper {
         const oldZoom = tr.zoom;
         tr.setCenter(computeGlobePanCenter(deltas.panDelta, tr).wrap());
         // Setting the center might adjust zoom to keep globe size constant, we need to avoid adding this adjustment a second time
-        //ZERDA
-        //tr.setZoom(oldZoom + getZoomAdjustment(oldLat, tr.center.lat));
-        tr.setZoom(oldZoom);
+        tr.setZoom(oldZoom + getZoomAdjustment(oldLat, tr.center.lat));
     }
 
     cameraForBoxAndBearing(options: CameraForBoundsOptions, padding: PaddingOptions, bounds: LngLatBounds, bearing: number, tr: ITransform): CameraForBoxAndBearingHandlerResult {
@@ -341,9 +339,7 @@ export class GlobeCameraHelper implements ICameraHelper {
             if (isZooming) {
                 const normalizedInterpolatedZoom = interpolates.number(normalizedStartZoom, normalizedEndZoom, k);
                 const interpolatedZoom = normalizedInterpolatedZoom + getZoomAdjustment(0, tr.center.lat);
-                //ZERDA
-                if (optionsZoom) tr.setZoom(interpolatedZoom);
-                else tr.setZoom(startZoom);
+                tr.setZoom(interpolatedZoom);
             }
         };
 

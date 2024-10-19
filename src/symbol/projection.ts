@@ -17,7 +17,6 @@ import {findLineIntersection} from '../util/util';
 import {UnwrappedTileID} from '../source/tile_id';
 import {StructArray} from '../util/struct_array';
 import {tileCoordinatesToLocation} from '../geo/projection/mercator_utils';
-import {planetScaleAtLatitude} from '../geo/projection/globe_utils';
 
 /**
  * The result of projecting a point to the screen, with some additional information about the projection.
@@ -823,7 +822,7 @@ export function placeGlyphAlongLine(
             projectionContext.lineVertexArray.gety(currentIndex)
         );
         const coordinates = tileCoordinatesToLocation(currentVertexMerc.x, currentVertexMerc.y, unwrappedTileID.canonical);
-        distanceAdjustment = planetScaleAtLatitude(coordinates.lat);
+        distanceAdjustment = Math.cos(coordinates.lat * Math.PI / 180);
         //distanceAdjustment = 1.0;
         // find next vertex in viewport space
         currentVertex = projectLineVertexToLabelPlane(currentIndex, projectionContext, syntheticVertexArgs);
