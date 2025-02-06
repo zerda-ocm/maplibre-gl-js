@@ -227,6 +227,58 @@ function getPxOffset(fixedOffset, fixedSize, stretchOffset, stretchSize) {
     return fixedOffset - fixedSize * stretchOffset / stretchSize;
 }
 
+const offsetMap = {
+    '\ue100': -72.0,
+    '\ue101': -69.0,
+    '\ue102': -66.0,
+    '\ue103': -63.0,
+    '\ue104': -60.0,
+    '\ue105': -57.0,
+    '\ue106': -54.0,
+    '\ue107': -51.0,
+    '\ue108': -48.0,
+    '\ue109': -45.0,
+    '\ue10a': -42.0,
+    '\ue10b': -39.0,
+    '\ue10c': -36.0,
+    '\ue10d': -33.0,
+    '\ue10e': -30.0,
+    '\ue10f': -27.0,
+    '\ue110': -24.0,
+    '\ue111': -21.0,
+    '\ue112': -18.0,
+    '\ue113': -15.0,
+    '\ue114': -12.0,
+    '\ue115': -9.0,
+    '\ue116': -6.0,
+    '\ue117': -3.0,
+    '\ue118': 0.0,
+    '\ue119': 3.0,
+    '\ue11a': 6.0,
+    '\ue11b': 9.0,
+    '\ue11c': 12.0,
+    '\ue11d': 15.0,
+    '\ue11e': 18.0,
+    '\ue11f': 21.0,
+    '\ue120': 24.0,
+    '\ue121': 27.0,
+    '\ue122': 30.0,
+    '\ue123': 33.0,
+    '\ue124': 36.0,
+    '\ue125': 39.0,
+    '\ue126': 42.0,
+    '\ue127': 45.0,
+    '\ue128': 48.0,
+    '\ue129': 51.0,
+    '\ue12a': 54.0,
+    '\ue12b': 57.0,
+    '\ue12c': 60.0,
+    '\ue12d': 63.0,
+    '\ue12e': 66.0,
+    '\ue12f': 69.0,
+    '\ue130': 72.0,
+};
+
 /**
  * Create the quads used for rendering a text label.
  */
@@ -245,7 +297,17 @@ export function getGlyphQuads(
     const quads = [];
 
     for (const line of shaping.positionedLines) {
+        let i = 0;
+        let offset = 0.0;
         for (const positionedGlyph of line.positionedGlyphs) {
+            const char = shaping.text[i];
+            if (offsetMap[char] !== undefined) {
+                offset = offsetMap[char];
+            }
+            i = i+1;
+            //if (shaping.text == '\ue091\ue116\uf00a\ue11a\uf018\ue081\ue116\uf00b\ue090\ue116\uf00c\ue00d\ue116\uf00e\ue07c\ue116\uf00f\ue092\ue116\uf010\ue008\ue116\uf011\ue029\ue11a\uf019\ue04b\ue11a\uf01a\ue029\ue11a\uf01b\ue091\ue11a\uf01c\ue035\ue11a\uf01d\ue018\ue11a\uf01e\ue008\ue11a\uf01f') {
+            //    console.log(`${i}:  Offset: ${offset} Char: ${char} (Unicode: ${char.codePointAt(0)?.toString(16)})`);
+            //}
             if (!positionedGlyph.rect) continue;
             const textureRect: Rect = positionedGlyph.rect || {} as Rect;
 
@@ -279,7 +341,7 @@ export function getGlyphQuads(
 
             let builtInOffset: [number, number] = alongLine ?
                 [0, 0] :
-                [positionedGlyph.x + halfAdvance + textOffset[0], positionedGlyph.y + textOffset[1] - lineOffset];
+                [positionedGlyph.x + halfAdvance + textOffset[0] + offset, positionedGlyph.y + textOffset[1] - lineOffset];
 
             let verticalizedLabelOffset = [0, 0] as [number, number];
             if (rotateVerticalGlyph) {
