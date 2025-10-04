@@ -1,7 +1,7 @@
 import {beforeEach, describe, expect, test} from 'vitest';
 import {GlobeTransform} from './globe_transform';
 import {LngLat} from '../lng_lat';
-import {coveringTiles, coveringZoomLevel, type CoveringZoomOptions} from './covering_tiles';
+import {coveringTiles, coveringZoomLevel, createCalculateTileZoomFunction, type CoveringTilesOptions} from './covering_tiles';
 import {OverscaledTileID} from '../../source/tile_id';
 import {MercatorTransform} from './mercator_transform';
 import {globeConstants} from './vertical_perspective_projection';
@@ -65,11 +65,7 @@ describe('coveringTiles', () => {
                 new OverscaledTileID(3, 0, 3, 2, 3),
                 new OverscaledTileID(3, 0, 3, 2, 4),
                 new OverscaledTileID(3, 0, 3, 5, 3),
-                new OverscaledTileID(3, 0, 3, 5, 4),
-                new OverscaledTileID(3, 0, 3, 2, 2),
-                new OverscaledTileID(3, 0, 3, 2, 5),
-                new OverscaledTileID(3, 0, 3, 5, 2),
-                new OverscaledTileID(3, 0, 3, 5, 5),
+                new OverscaledTileID(3, 0, 3, 5, 4)
             ]);
         });
     
@@ -89,7 +85,7 @@ describe('coveringTiles', () => {
                 new OverscaledTileID(6, 0, 6, 32, 31),
                 new OverscaledTileID(6, 0, 6, 31, 31),
                 new OverscaledTileID(10, 0, 10, 511, 512),
-                new OverscaledTileID(10, 0, 10, 512, 512)
+                new OverscaledTileID(10, 0, 10, 512, 512),
             ]);
         });
     
@@ -108,10 +104,8 @@ describe('coveringTiles', () => {
     
             expect(tiles).toEqual([
                 new OverscaledTileID(7, 0, 7, 64, 64),
-                new OverscaledTileID(7, 0, 7, 65, 63),
                 new OverscaledTileID(7, 0, 7, 64, 63),
                 new OverscaledTileID(7, 0, 7, 63, 63),
-                new OverscaledTileID(7, 0, 7, 64, 62),
                 new OverscaledTileID(10, 0, 10, 510, 512),
                 new OverscaledTileID(10, 0, 10, 511, 512),
                 new OverscaledTileID(10, 0, 10, 511, 513)
@@ -169,6 +163,121 @@ describe('coveringTiles', () => {
     
             expect(tiles).toEqual([
                 new OverscaledTileID(0, 0, 0, 0, 0)
+            ]);
+        });
+
+        test('zoom = 11', () => {
+            const transform = new GlobeTransform();
+            transform.resize(128, 128);
+            transform.setZoom(11);
+            transform.setPitch(0);
+            transform.setCenter(new LngLat(-179.73, -0.087));
+    
+            const tiles = coveringTiles(transform, {
+                tileSize: 512,
+                minzoom: 0,
+                maxzoom: 15,
+                reparseOverscaled: true
+            });
+    
+            expect(tiles).toEqual([
+                new OverscaledTileID(11, 0, 11, 1, 1024)
+            ]);
+        });
+        
+        test('zoom = 11, mid lat', () => {
+            const transform = new GlobeTransform();
+            transform.resize(128, 128);
+            transform.setZoom(11);
+            transform.setPitch(0);
+            transform.setCenter(new LngLat(-179.73, 60.02));
+    
+            const tiles = coveringTiles(transform, {
+                tileSize: 512,
+                minzoom: 0,
+                maxzoom: 15,
+                reparseOverscaled: true
+            });
+    
+            expect(tiles).toEqual([
+                new OverscaledTileID(11, 0, 11, 1, 594)
+            ]);
+        });
+        
+        test('zoom = 11, high lat', () => {
+            const transform = new GlobeTransform();
+            transform.resize(128, 128);
+            transform.setZoom(11);
+            transform.setPitch(0);
+            transform.setCenter(new LngLat(-179.73, 85.028));
+    
+            const tiles = coveringTiles(transform, {
+                tileSize: 512,
+                minzoom: 0,
+                maxzoom: 15,
+                reparseOverscaled: true
+            });
+    
+            expect(tiles).toEqual([
+                new OverscaledTileID(11, 0, 11, 1, 1)
+            ]);
+        });
+
+        test('zoom = 11, mid lat, mid lng', () => {
+            const transform = new GlobeTransform();
+            transform.resize(128, 128);
+            transform.setZoom(11);
+            transform.setPitch(0);
+            transform.setCenter(new LngLat(-58.97, 60.02));
+    
+            const tiles = coveringTiles(transform, {
+                tileSize: 512,
+                minzoom: 0,
+                maxzoom: 15,
+                reparseOverscaled: true
+            });
+    
+            expect(tiles).toEqual([
+                new OverscaledTileID(11, 0, 11, 688, 594)
+            ]);
+        });
+        
+        test('zoom = 11, mid lng', () => {
+            const transform = new GlobeTransform();
+            transform.resize(128, 128);
+            transform.setZoom(11);
+            transform.setPitch(0);
+            transform.setCenter(new LngLat(-58.97, -0.087));
+    
+            const tiles = coveringTiles(transform, {
+                tileSize: 512,
+                minzoom: 0,
+                maxzoom: 15,
+                reparseOverscaled: true
+            });
+    
+            expect(tiles).toEqual([
+                new OverscaledTileID(11, 0, 11, 688, 1024)
+            ]);
+        });
+
+        test('nonzero center elevation', () => {
+            const options = {
+                minzoom: 1,
+                maxzoom: 15,
+                tileSize: 512,
+                reparseOverscaled: true
+            };
+        
+            const transform = new GlobeTransform();
+            transform.resize(128, 128);
+            transform.setZoom(11);
+            transform.setCenter(new LngLat(0.021, 0.0915));
+            transform.setElevation(20000);
+
+            expect(coveringTiles(transform, options)).toEqual([
+                new OverscaledTileID(11, 0, 11, 1024, 1023),
+                new OverscaledTileID(11, 0, 11, 1023, 1023)
             ]);
         });
     });
@@ -318,14 +427,62 @@ describe('coveringTiles', () => {
                 new OverscaledTileID(7, 0, 7, 73, 35),
                 new OverscaledTileID(7, 0, 7, 72, 36)
             ]);
+        });
     
+        test('calculates tile coverage with low number of zoom levels and low tile count', () => {
+        
+            const optionsWithTileLodParams = { 
+                minzoom: 1,
+                maxzoom: 10,
+                tileSize: 512,
+                calculateTileZoom: createCalculateTileZoomFunction(1.0, 1.0)
+            };
+            expect(coveringTiles(transform, optionsWithTileLodParams)).toEqual([
+                new OverscaledTileID(5, 0, 5, 18, 9),
+                new OverscaledTileID(5, 0, 5, 18, 8)
+            ]);
+        });
+    
+        test('calculates tile coverage with low tile count', () => {
+        
+            const optionsWithTileLodParams = { 
+                minzoom: 1,
+                maxzoom: 10,
+                tileSize: 512,
+                calculateTileZoom: createCalculateTileZoomFunction(1.0, 10.0)
+            };
+            expect(coveringTiles(transform, optionsWithTileLodParams)).toEqual([
+                new OverscaledTileID(6, 0, 6, 37, 18),
+                new OverscaledTileID(6, 0, 6, 37, 17),
+                new OverscaledTileID(6, 0, 6, 36, 18),
+                new OverscaledTileID(6, 0, 6, 36, 17)
+            ]);
+        });
+    
+        test('calculates tile coverage with low number of zoom levels', () => {
+        
+            const optionsWithTileLodParams = { 
+                minzoom: 1,
+                maxzoom: 10,
+                tileSize: 512,
+                calculateTileZoom: createCalculateTileZoomFunction(10.0, 1.0)
+            };
+            expect(coveringTiles(transform, optionsWithTileLodParams)).toEqual([
+                new OverscaledTileID(7, 0, 7, 73, 37),
+                new OverscaledTileID(7, 0, 7, 73, 36),
+                new OverscaledTileID(7, 0, 7, 72, 36),
+                new OverscaledTileID(6, 0, 6, 37, 18),
+                new OverscaledTileID(5, 0, 5, 18, 8),
+                new OverscaledTileID(9, 0, 9, 290, 148),
+                new OverscaledTileID(9, 0, 9, 291, 148)
+            ]);
+        });
+    
+        test('calculates tile coverage at w > 0', () => {
             transform.setZoom(2);
             transform.setPitch(0);
             transform.setBearing(0);
             transform.resize(300, 300);
-        });
-    
-        test('calculates tile coverage at w > 0', () => {
             transform.setCenter(new LngLat(630.01, 0.01));
             expect(coveringTiles(transform, options)).toEqual([
                 new OverscaledTileID(2, 2, 2, 1, 1),
@@ -403,13 +560,123 @@ describe('coveringTiles', () => {
                 new OverscaledTileID(0, 0, 0, 0, 0)
             ]);
         });
+        
+        test('z11', () => {
+            const options = {
+                minzoom: 1,
+                maxzoom: 15,
+                tileSize: 512,
+                reparseOverscaled: true
+            };
+        
+            const transform = new MercatorTransform(0, 15, 0, 85, true);
+            transform.resize(128, 128);
+            transform.setZoom(11);
+            transform.setCenter(new LngLat(-179.73, -0.087));
+        
+            expect(coveringTiles(transform, options)).toEqual([
+                new OverscaledTileID(11, 0, 11, 1, 1024)
+            ]);
+        });
+        
+        test('z11, mid lat', () => {
+            const options = {
+                minzoom: 1,
+                maxzoom: 15,
+                tileSize: 512,
+                reparseOverscaled: true
+            };
+        
+            const transform = new MercatorTransform(0, 15, 0, 85, true);
+            transform.resize(128, 128);
+            transform.setZoom(11);
+            transform.setCenter(new LngLat(-179.73, 60.02));
+        
+            expect(coveringTiles(transform, options)).toEqual([
+                new OverscaledTileID(11, 0, 11, 1, 594)
+            ]);
+        });
+        
+        test('z11, high lat', () => {
+            const options = {
+                minzoom: 1,
+                maxzoom: 15,
+                tileSize: 512,
+                reparseOverscaled: true
+            };
+        
+            const transform = new MercatorTransform(0, 15, 0, 85, true);
+            transform.resize(128, 128);
+            transform.setZoom(11);
+            transform.setCenter(new LngLat(-179.73, 85.028));
+        
+            expect(coveringTiles(transform, options)).toEqual([
+                new OverscaledTileID(11, 0, 11, 1, 1)
+            ]);
+        });
+
+        test('z11, mid lat, mid lng', () => {
+            const options = {
+                minzoom: 1,
+                maxzoom: 15,
+                tileSize: 512,
+                reparseOverscaled: true
+            };
+        
+            const transform = new MercatorTransform(0, 15, 0, 85, true);
+            transform.resize(128, 128);
+            transform.setZoom(11);
+            transform.setCenter(new LngLat(-58.97, 60.02));
+        
+            expect(coveringTiles(transform, options)).toEqual([
+                new OverscaledTileID(11, 0, 11, 688, 594)
+            ]);
+        });
+
+        test('z11, low lat, mid lng', () => {
+            const options = {
+                minzoom: 1,
+                maxzoom: 15,
+                tileSize: 512,
+                reparseOverscaled: true
+            };
+        
+            const transform = new MercatorTransform(0, 15, 0, 85, true);
+            transform.resize(128, 128);
+            transform.setZoom(11);
+            transform.setCenter(new LngLat(-58.97, -0.087));
+        
+            expect(coveringTiles(transform, options)).toEqual([
+                new OverscaledTileID(11, 0, 11, 688, 1024)
+            ]);
+        });
+
+        test('nonzero center elevation', () => {
+            const options = {
+                minzoom: 1,
+                maxzoom: 15,
+                tileSize: 512,
+                reparseOverscaled: true
+            };
+        
+            const transform = new MercatorTransform(0, 15, 0, 85, true);
+            transform.resize(128, 128);
+            transform.setZoom(11);
+            transform.setCenter(new LngLat(0.03, 0.0915));
+            transform.setElevation(20000);
+
+            expect(coveringTiles(transform, options)).toEqual([
+                new OverscaledTileID(11, 0, 11, 1024, 1023),
+                new OverscaledTileID(11, 0, 11, 1023, 1023)
+            ]);
+        });
     
     });
 });
 
 describe('coveringZoomLevel', () => {
     let transform: MercatorTransform;
-    let options: CoveringZoomOptions;
+    let options: CoveringTilesOptions;
 
     beforeEach(() => {
         transform = new MercatorTransform(0, 22, 0, 60, true);

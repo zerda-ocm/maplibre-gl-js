@@ -11,12 +11,14 @@ import type {IReadonlyTransform} from '../geo/transform_interface';
 import type {SingleCollisionBox} from '../data/bucket/symbol_bucket';
 import type {
     GlyphOffsetArray,
+    PlacedSymbol,
     SymbolLineVertexArray
 } from '../data/array_types.g';
 import type {OverlapMode} from '../style/style_layer/overlap_mode';
 import {type OverscaledTileID, type UnwrappedTileID} from '../source/tile_id';
 import {type PointProjection, type SymbolProjectionContext, getTileSkewVectors, pathSlicedToLongestUnoccluded, placeFirstAndLastGlyph, projectPathSpecialProjection, xyTransformMat4} from '../symbol/projection';
 import {clamp, getAABB} from '../util/util';
+import {Bounds} from '../geo/bounds';
 
 // When a symbol crosses the edge that causes it to be included in
 // collision detection, it will cause changes in the symbols around
@@ -188,7 +190,7 @@ export class CollisionIndex {
 
     placeCollisionCircles(
         overlapMode: OverlapMode,
-        symbol: any,
+        symbol: PlacedSymbol,
         lineVertexArray: SymbolLineVertexArray,
         glyphOffsetArray: GlyphOffsetArray,
         fontSize: number,
@@ -379,19 +381,14 @@ export class CollisionIndex {
         }
 
         const query = [];
-        let minX = Infinity;
-        let minY = Infinity;
-        let maxX = -Infinity;
-        let maxY = -Infinity;
+        const bounds = new Bounds();
         for (const point of viewportQueryGeometry) {
             const gridPoint = new Point(point.x + viewportPadding, point.y + viewportPadding);
-            minX = Math.min(minX, gridPoint.x);
-            minY = Math.min(minY, gridPoint.y);
-            maxX = Math.max(maxX, gridPoint.x);
-            maxY = Math.max(maxY, gridPoint.y);
+            bounds.extend(gridPoint);
             query.push(gridPoint);
         }
 
+        const {minX, minY, maxX, maxY} = bounds;
         const features = this.grid.query(minX, minY, maxX, maxY)
             .concat(this.ignoredGrid.query(minX, minY, maxX, maxY));
 

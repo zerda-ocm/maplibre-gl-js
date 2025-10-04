@@ -14,6 +14,7 @@ import type {RemoveSourceParams} from '../util/actor_messages';
 import type {IActor} from '../util/actor';
 import type {StyleLayerIndex} from '../style/style_layer_index';
 import type {SubdivisionGranularitySetting} from '../render/subdivision_granularity_settings';
+import type {DashEntry} from '../render/line_atlas';
 
 /**
  * Parameters to identify a tile
@@ -59,6 +60,7 @@ export type WorkerDEMTileParameters = TileParameters & {
 export type WorkerTileResult = ExpiryData & {
     buckets: Array<Bucket>;
     imageAtlas: ImageAtlas;
+    dashPositions: Record<string, DashEntry>;
     glyphAtlasImage: AlphaImage;
     featureIndex: FeatureIndex;
     collisionBoxArray: CollisionBoxArray;
@@ -86,7 +88,7 @@ export interface WorkerSourceConstructor {
 /**
  * `WorkerSource` should be implemented by custom source types to provide code that can be run on the WebWorkers.
  * Each of the methods has a relevant event that triggers it from the main thread with the relevant parameters.
- * @see {@link Map#addSourceType}
+ * @see {@link Map.addSourceType}
  */
 export interface WorkerSource {
     availableImages: Array<string>;
@@ -99,7 +101,7 @@ export interface WorkerSource {
     loadTile(params: WorkerTileParameters): Promise<WorkerTileResult>;
     /**
      * Re-parses a tile that has already been loaded.  Yields the same data as
-     * {@link WorkerSource#loadTile}.
+     * {@link WorkerSource.loadTile}.
      */
     reloadTile(params: WorkerTileParameters): Promise<WorkerTileResult>;
     /**

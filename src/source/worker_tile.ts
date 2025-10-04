@@ -22,9 +22,8 @@ import type {
 } from '../source/worker_source';
 import type {PromoteIdSpecification} from '@maplibre/maplibre-gl-style-spec';
 import type {VectorTile} from '@mapbox/vector-tile';
-import {MessageType, type GetGlyphsResponse, type GetImagesResponse} from '../util/actor_messages';
+import {type GetDashesResponse, MessageType, type GetGlyphsResponse, type GetImagesResponse} from '../util/actor_messages';
 import type {SubdivisionGranularitySetting} from '../render/subdivision_granularity_settings';
-
 export class WorkerTile {
     tileID: OverscaledTileID;
     uid: string | number;
@@ -78,6 +77,7 @@ export class WorkerTile {
             iconDependencies: {},
             patternDependencies: {},
             glyphDependencies: {},
+            dashDependencies: {},
             availableImages,
             subdivisionGranularity
         };
@@ -114,7 +114,7 @@ export class WorkerTile {
 
                 recalculateLayers(family, this.zoom, availableImages);
 
-                const bucket: Bucket = buckets[layer.id] = layer.createBucket({
+                const bucket = buckets[layer.id] = layer.createBucket({
                     index: featureIndex.bucketLayerIDs.length,
                     layers: family,
                     zoom: this.zoom,
@@ -160,7 +160,16 @@ export class WorkerTile {
             getPatternsPromise = actor.sendAsync({type: MessageType.getImages, data: {icons: patterns, source: this.source, tileID: this.tileID, type: 'patterns'}}, abortController);
         }
 
-        const [glyphMap, iconMap, patternMap] = await Promise.all([getGlyphsPromise, getIconsPromise, getPatternsPromise]);
+        const dashes = options.dashDependencies;
+        let getDashesPromise = Promise.resolve<GetDashesResponse>({} as GetDashesResponse);
+        if (Object.keys(dashes).length) {
+            const abortController = new AbortController();
+            this.inFlightDependencies.push(abortController);
+            getDashesPromise = actor.sendAsync({type: MessageType.getDashes, data: {dashes}}, abortController);
+        }
+
+        const [glyphMap, iconMap, patternMap, dashPositions] = await Promise.all([getGlyphsPromise, getIconsPromise, getPatternsPromise, getDashesPromise]);
+
         const glyphAtlas = new GlyphAtlas(glyphMap);
         const imageAtlas = new ImageAtlas(iconMap, patternMap);
 
@@ -178,12 +187,9 @@ export class WorkerTile {
                     canonical: this.tileID.canonical,
                     subdivisionGranularity: options.subdivisionGranularity
                 });
-            } else if (bucket.hasPattern &&
-                (bucket instanceof LineBucket ||
-                bucket instanceof FillBucket ||
-                bucket instanceof FillExtrusionBucket)) {
+            } else if (bucket.hasDependencies && (bucket instanceof FillBucket || bucket instanceof FillExtrusionBucket || bucket instanceof LineBucket)) {
                 recalculateLayers(bucket.layers, this.zoom, availableImages);
-                bucket.addFeatures(options, this.tileID.canonical, imageAtlas.patternPositions);
+                bucket.addFeatures(options, this.tileID.canonical, imageAtlas.patternPositions, dashPositions);
             }
         }
 
@@ -194,6 +200,7 @@ export class WorkerTile {
             collisionBoxArray: this.collisionBoxArray,
             glyphAtlasImage: glyphAtlas.image,
             imageAtlas,
+            dashPositions,
             // Only used for benchmarking:
             glyphMap: this.returnDependencies ? glyphMap : null,
             iconMap: this.returnDependencies ? iconMap : null,

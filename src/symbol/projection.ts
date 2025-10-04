@@ -10,7 +10,8 @@ import type {SymbolBucket} from '../data/bucket/symbol_bucket';
 import type {
     GlyphOffsetArray,
     SymbolLineVertexArray,
-    SymbolDynamicLayoutArray
+    SymbolDynamicLayoutArray,
+    PlacedSymbol,
 } from '../data/array_types.g';
 import {WritingMode} from '../symbol/shaping';
 import {findLineIntersection} from '../util/util';
@@ -348,7 +349,7 @@ export function placeFirstAndLastGlyph(
     lineOffsetX: number,
     lineOffsetY: number,
     flip: boolean,
-    symbol: any,
+    symbol: PlacedSymbol,
     rotateToLine: boolean,
     projectionContext: SymbolProjectionContext,
     unwrappedTileID: UnwrappedTileID): FirstAndLastGlyphPlacement {
@@ -409,7 +410,7 @@ type GlyphLinePlacementResult = OrientationChangeType & {
 type GlyphLinePlacementArgs = {
     projectionContext: SymbolProjectionContext;
     pitchedLabelPlaneMatrixInverse: mat4;
-    symbol: any; // PlacedSymbolStruct
+    symbol: PlacedSymbol;
     fontSize: number;
     flip: boolean;
     keepUpright: boolean;
@@ -472,12 +473,13 @@ function placeGlyphsAlongLine(args: GlyphLinePlacementArgs): GlyphLinePlacementR
         placedGlyphs = [firstAndLastGlyph.first];
         //let rotateToLine2 = true;
         for (let glyphIndex = symbol.glyphStartIndex + 1; glyphIndex < glyphEndIndex - 1; glyphIndex++) {
-            // Since first and last glyph fit on the line, we're sure that the rest of the glyphs can be placed
-            //if (glyphIndex > glyphEndIndex - 20) {
-            //    rotateToLine2 = false;
-            //}
-            placedGlyphs.push(placeGlyphAlongLine(fontScale * glyphOffsetArray.getoffsetX(glyphIndex), lineOffsetX, lineOffsetY, flip, symbol.segment,
-                lineStartIndex, lineEndIndex, projectionContext, rotateToLine, unwrappedTileID));
+            // Since first and last glyph fit on the line, try placing the rest of the glyphs.
+            const placedGlyph = placeGlyphAlongLine(fontScale * glyphOffsetArray.getoffsetX(glyphIndex), lineOffsetX, lineOffsetY, flip, symbol.segment,
+                lineStartIndex, lineEndIndex, projectionContext, rotateToLine);
+            if (!placedGlyph) {
+                return {notEnoughRoom: true};
+            }
+            placedGlyphs.push(placedGlyph);
         }
         placedGlyphs.push(firstAndLastGlyph.last);
     } else {
@@ -690,7 +692,7 @@ function projectFromLabelPlaneToClipSpace(x: number, y: number, projectionContex
     } else {
         return {
             x: (x / projectionContext.width) * 2.0 - 1.0,
-            y: (y / projectionContext.height) * 2.0 - 1.0
+            y: 1.0 - (y / projectionContext.height) * 2.0
         };
     }
 }

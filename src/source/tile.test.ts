@@ -1,11 +1,10 @@
 import {describe, test, expect, vi} from 'vitest';
 import {createSymbolBucket} from '../../test/unit/lib/create_symbol_layer';
 import {Tile} from '../source/tile';
-import {GeoJSONWrapper, type Feature} from '../source/geojson_wrapper';
 import {OverscaledTileID} from '../source/tile_id';
 import fs from 'fs';
 import path from 'path';
-import vtpbf from 'vt-pbf';
+import {type Feature, fromVectorTileJs, GeoJSONWrapper} from '@maplibre/vt-pbf';
 import {FeatureIndex} from '../data/feature_index';
 import {CollisionBoxArray} from '../data/array_types.g';
 import {extend} from '../util/util';
@@ -18,39 +17,54 @@ describe('querySourceFeatures', () => {
         tags: {oneway: true}
     } as any as Feature];
 
-    test('geojson tile', () => {
+    test('not data', () => {
         const tile = new Tile(new OverscaledTileID(3, 0, 2, 1, 2), undefined);
-        let result;
-
-        result = [];
+        const result = [];
         tile.querySourceFeatures(result);
         expect(result).toHaveLength(0);
+    });
 
+    describe('geojson tile', () => {
+        const tile = new Tile(new OverscaledTileID(3, 0, 2, 1, 2), undefined);
         const geojsonWrapper = new GeoJSONWrapper(features);
         geojsonWrapper.name = '_geojsonTileLayer';
         tile.loadVectorData(
-            createVectorData({rawTileData: vtpbf({layers: {'_geojsonTileLayer': geojsonWrapper}})}),
+            createVectorData({rawTileData: fromVectorTileJs({layers: {'_geojsonTileLayer': geojsonWrapper}})}),
             createPainter()
         );
 
-        result = [];
-        tile.querySourceFeatures(result);
-        expect(result).toHaveLength(1);
-        expect(result[0].geometry.coordinates[0]).toEqual([-90, 0]);
-        result = [];
-        tile.querySourceFeatures(result, {} as any);
-        expect(result).toHaveLength(1);
-        expect(result[0].properties).toEqual(features[0].tags);
-        result = [];
-        tile.querySourceFeatures(result, {sourceLayer: undefined, filter: ['==', 'oneway', true]});
-        expect(result).toHaveLength(1);
-        result = [];
-        tile.querySourceFeatures(result, {sourceLayer: undefined, filter: ['!=', 'oneway', true]});
-        expect(result).toHaveLength(0);
-        result = [];
-        const polygon = {type: 'Polygon',  coordinates: [[[-91, -1], [-89, -1], [-89, 1], [-91, 1], [-91, -1]]]};
-        tile.querySourceFeatures(result, {sourceLayer: undefined, filter: ['within', polygon]});
-        expect(result).toHaveLength(1);
+        test('query all source features', () => {
+            let result = [];
+            tile.querySourceFeatures(result);
+            expect(result).toHaveLength(1);
+            expect(result[0].geometry.coordinates[0]).toEqual([-90, 0]);
+            result = [];
+            tile.querySourceFeatures(result, {} as any);
+            expect(result).toHaveLength(1);
+            expect(result[0].properties).toEqual(features[0].tags);
+        });
+
+        test('filter source features', () => {
+            let result = [];
+            tile.querySourceFeatures(result, {sourceLayer: undefined, filter: ['==', 'oneway', true]});
+            expect(result).toHaveLength(1);
+            result = [];
+            tile.querySourceFeatures(result, {sourceLayer: undefined, filter: ['!=', 'oneway', true]});
+            expect(result).toHaveLength(0);
+            result = [];
+            const polygon = {type: 'Polygon',  coordinates: [[[-91, -1], [-89, -1], [-89, 1], [-91, 1], [-91, -1]]]} as GeoJSON.GeoJSON;
+            tile.querySourceFeatures(result, {sourceLayer: undefined, filter: ['within', polygon]});
+            expect(result).toHaveLength(1);
+        });
+
+        test('filter with global-state', () => {
+            let result = [];
+            tile.querySourceFeatures(result, {sourceLayer: undefined, filter: ['==', ['get', 'oneway'], ['global-state', 'isOneway']] , globalState: {isOneway: true}});
+            expect(result).toHaveLength(1);
+            result = [];
+            tile.querySourceFeatures(result, {sourceLayer: undefined, filter: ['!=', ['get', 'oneway'], ['global-state', 'isOneway']], globalState: {isOneway: true}});
+            expect(result).toHaveLength(0);
+        });
     });
 
     test('empty geojson tile', () => {
@@ -131,7 +145,7 @@ describe('querySourceFeatures', () => {
 
 });
 
-describe('Tile#isLessThan', () => {
+describe('Tile.isLessThan', () => {
     test('correctly sorts tiles', () => {
         const tiles = [
             new OverscaledTileID(9, 0, 9, 146, 195),
@@ -253,7 +267,7 @@ describe('expiring tiles', () => {
 });
 
 describe('rtl text detection', () => {
-    test('Tile#hasRTLText is true when a tile loads a symbol bucket with rtl text', () => {
+    test('Tile.hasRTLText is true when a tile loads a symbol bucket with rtl text', () => {
         const tile = new Tile(new OverscaledTileID(1, 0, 1, 1, 1), undefined);
         // Create a stub symbol bucket
         const symbolBucket = createSymbolBucket('test', 'Test', 'test', new CollisionBoxArray());

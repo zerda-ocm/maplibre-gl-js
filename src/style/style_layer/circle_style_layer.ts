@@ -1,12 +1,10 @@
+import type Point from '@mapbox/point-geometry';
 import {StyleLayer, type QueryIntersectsFeatureParams} from '../style_layer';
 
 import {CircleBucket} from '../../data/bucket/circle_bucket';
-import {polygonIntersectsBufferedPoint} from '../../util/intersection_tests';
-import {getMaximumPaintValue, translateDistance, translate} from '../query_utils';
+import {circleIntersection, getMaximumPaintValue, projectQueryGeometry, translateDistance, translate} from '../query_utils';
 import properties, {type CircleLayoutPropsPossiblyEvaluated, type CirclePaintPropsPossiblyEvaluated} from './circle_style_layer_properties.g';
 import {type Transitionable, type Transitioning, type Layout, type PossiblyEvaluated} from '../properties';
-import {type mat4, vec4} from 'gl-matrix';
-import Point from '@mapbox/point-geometry';
 import type {LayerSpecification} from '@maplibre/maplibre-gl-style-spec';
 import type {Bucket, BucketParameters} from '../../data/bucket';
 import type {CircleLayoutProps, CirclePaintProps} from './circle_style_layer_properties.g';
@@ -24,8 +22,8 @@ export class CircleStyleLayer extends StyleLayer {
     _transitioningPaint: Transitioning<CirclePaintProps>;
     paint: PossiblyEvaluated<CirclePaintProps, CirclePaintPropsPossiblyEvaluated>;
 
-    constructor(layer: LayerSpecification) {
-        super(layer, properties);
+    constructor(layer: LayerSpecification, globalState: Record<string, any>) {
+        super(layer, properties, globalState);
     }
 
     createBucket(parameters: BucketParameters<any>) {
@@ -46,7 +44,8 @@ export class CircleStyleLayer extends StyleLayer {
         geometry,
         transform,
         pixelsToTileUnits,
-        pixelPosMatrix}: QueryIntersectsFeatureParams
+        unwrappedTileID,
+        getElevation}: QueryIntersectsFeatureParams
     ): boolean {
         const translatedPolygon = translate(queryGeometry,
             this.paint.get('circle-translate'),
@@ -60,38 +59,29 @@ export class CircleStyleLayer extends StyleLayer {
         // Otherwise, compare geometry in the plane of the viewport
         // A circle with fixed scaling relative to the viewport gets larger in tile space as it moves into the distance
         // A circle with fixed scaling relative to the map gets smaller in viewport space as it moves into the distance
-        const alignWithMap = this.paint.get('circle-pitch-alignment') === 'map';
-        const transformedPolygon = alignWithMap ? translatedPolygon : projectQueryGeometry(translatedPolygon, pixelPosMatrix);
-        const transformedSize = alignWithMap ? size * pixelsToTileUnits : size;
 
-        for (const ring of geometry) {
-            for (const point of ring) {
+        const pitchScale = this.paint.get('circle-pitch-scale');
+        const pitchAlignment = this.paint.get('circle-pitch-alignment');
 
-                const transformedPoint = alignWithMap ? point : projectPoint(point, pixelPosMatrix);
-
-                let adjustedSize = transformedSize;
-                const projectedCenter = vec4.transformMat4([] as any, [point.x, point.y, 0, 1], pixelPosMatrix);
-                if (this.paint.get('circle-pitch-scale') === 'viewport' && this.paint.get('circle-pitch-alignment') === 'map') {
-                    adjustedSize *= projectedCenter[3] / transform.cameraToCenterDistance;
-                } else if (this.paint.get('circle-pitch-scale') === 'map' && this.paint.get('circle-pitch-alignment') === 'viewport') {
-                    adjustedSize *= transform.cameraToCenterDistance / projectedCenter[3];
-                }
-
-                if (polygonIntersectsBufferedPoint(transformedPolygon, transformedPoint, adjustedSize)) return true;
-            }
+        let transformedPolygon: Array<Point>;
+        let transformedSize: number;
+        if (pitchAlignment === 'map') {
+            transformedPolygon = translatedPolygon;
+            transformedSize = size * pixelsToTileUnits;
+        } else {
+            transformedPolygon = projectQueryGeometry(translatedPolygon, transform, unwrappedTileID, getElevation);
+            transformedSize = size;
         }
 
-        return false;
+        return circleIntersection({
+            queryGeometry: transformedPolygon,
+            size: transformedSize,
+            transform,
+            unwrappedTileID,
+            getElevation,
+            pitchAlignment,
+            pitchScale
+        }, geometry);
     }
 }
 
-function projectPoint(p: Point, pixelPosMatrix: mat4) {
-    const point = vec4.transformMat4([] as any, [p.x, p.y, 0, 1], pixelPosMatrix);
-    return new Point(point[0] / point[3], point[1] / point[3]);
-}
-
-function projectQueryGeometry(queryGeometry: Array<Point>, pixelPosMatrix: mat4) {
-    return queryGeometry.map((p) => {
-        return projectPoint(p, pixelPosMatrix);
-    });
-}

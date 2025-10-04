@@ -1,7 +1,7 @@
 import Protobuf from 'pbf';
-import VT from '@mapbox/vector-tile';
+import {VectorTile} from '@mapbox/vector-tile';
 
-import {derefLayers as deref} from '@maplibre/maplibre-gl-style-spec';
+import {derefLayers} from '@maplibre/maplibre-gl-style-spec'
 import {Style} from '../../../src/style/style';
 import {IReadonlyTransform} from '../../../src/geo/transform_interface';
 import {Evented} from '../../../src/util/evented';
@@ -39,6 +39,8 @@ class StubMap extends Evented {
     _getMapId() {
         return 1;
     }
+
+    migrateProjection() {}
 }
 
 function createStyle(styleJSON: StyleSpecification): Promise<Style> {
@@ -59,13 +61,14 @@ export default class TileParser {
     layerIndex: StyleLayerIndex;
     icons: any;
     glyphs: any;
+    dashes: any;
     style: Style;
     actor: IActor;
 
     constructor(styleJSON: StyleSpecification, sourceID: string) {
         this.styleJSON = styleJSON;
         this.sourceID = sourceID;
-        this.layerIndex = new StyleLayerIndex(deref(this.styleJSON.layers));
+        this.layerIndex = new StyleLayerIndex(derefLayers(this.styleJSON.layers));
         this.glyphs = {};
         this.icons = {};
     }
@@ -86,6 +89,14 @@ export default class TileParser {
         return this.glyphs[key];
     }
 
+    async loadDashes(params: any) {
+        const key = JSON.stringify(params);
+        if (!this.dashes[key]) {
+            this.dashes[key] = await this.style.getDashes('', params);
+        }
+        return this.dashes[key];
+    }
+
     setup(): Promise<void> {
         const parser = this;
         this.actor = {
@@ -95,6 +106,9 @@ export default class TileParser {
                 }
                 if (message.type === MessageType.getGlyphs) {
                     return parser.loadGlyphs(message.data);
+                }
+                if (message.type === MessageType.getDashes) {
+                    return parser.loadDashes(message.data);
                 }
                 throw new Error(`Invalid action ${message.type}`);
             }
@@ -138,7 +152,7 @@ export default class TileParser {
             subdivisionGranularity: SubdivisionGranularitySetting.noSubdivision
         });
 
-        const vectorTile = new VT.VectorTile(new Protobuf(tile.buffer));
+        const vectorTile = new VectorTile(new Protobuf(tile.buffer));
 
         return workerTile.parse(vectorTile, this.layerIndex, [], this.actor, SubdivisionGranularitySetting.noSubdivision);
     }

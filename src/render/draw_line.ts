@@ -16,7 +16,6 @@ import type {OverscaledTileID} from '../source/tile_id';
 import {clamp, nextPowerOfTwo} from '../util/util';
 import {renderColorRamp} from '../util/color_ramp';
 import {EXTENT} from '../data/extent';
-import {type StencilMode} from '../gl/stencil_mode';
 
 export function drawLine(painter: Painter, sourceCache: SourceCache, layer: LineStyleLayer, coords: Array<OverscaledTileID>, renderOptions: RenderOptions) {
     if (painter.renderPass !== 'translucent') return;
@@ -29,8 +28,9 @@ export function drawLine(painter: Painter, sourceCache: SourceCache, layer: Line
 
     const depthMode = painter.getDepthModeForSublayer(0, DepthMode.ReadOnly);
     const colorMode = painter.colorModeForRenderPass();
-    
-    const dasharray = layer.paint.get('line-dasharray');
+
+    const dasharrayProperty = layer.paint.get('line-dasharray');
+    const dasharray = dasharrayProperty.constantOr(1 as any);
     const patternProperty = layer.paint.get('line-pattern');
     const image = patternProperty.constantOr(1 as any);
 
@@ -63,11 +63,19 @@ export function drawLine(painter: Painter, sourceCache: SourceCache, layer: Line
         const terrainData = painter.style.map.terrain &&  painter.style.map.terrain.getTerrainData(coord);
 
         const constantPattern = patternProperty.constantOr(null);
+        const constantDasharray = dasharrayProperty && dasharrayProperty.constantOr(null);
+
         if (constantPattern && tile.imageAtlas) {
             const atlas = tile.imageAtlas;
             const posTo = atlas.patternPositions[constantPattern.to.toString()];
             const posFrom = atlas.patternPositions[constantPattern.from.toString()];
             if (posTo && posFrom) programConfiguration.setConstantPatternPositions(posTo, posFrom);
+
+        } else if (constantDasharray) {
+            const round = layer.layout.get('line-cap') === 'round';
+            const dashTo = painter.lineAtlas.getDash(constantDasharray.to, round);
+            const dashFrom = painter.lineAtlas.getDash(constantDasharray.from, round);
+            programConfiguration.setConstantDashPositions(dashTo, dashFrom);
         }
 
         const projectionData = transform.getProjectionData({
@@ -82,7 +90,7 @@ export function drawLine(painter: Painter, sourceCache: SourceCache, layer: Line
         const pixelRatio = 1;
 
         const uniformValues = image ? linePatternUniformValues(painter, tile, layer, pixelRatio, crossfade) :
-            dasharray ? lineSDFUniformValues(painter, tile, layer, pixelRatio, dasharray, crossfade) :
+            dasharray ? lineSDFUniformValues(painter, tile, layer, pixelRatio, crossfade) :
                 gradient ? lineGradientUniformValues(painter, tile, layer, pixelRatio, bucket.lineClipsArray.length) :
                     lineUniformValues(painter, tile, layer, pixelRatio);
 
@@ -90,9 +98,12 @@ export function drawLine(painter: Painter, sourceCache: SourceCache, layer: Line
             context.activeTexture.set(gl.TEXTURE0);
             tile.imageAtlasTexture.bind(gl.LINEAR, gl.CLAMP_TO_EDGE);
             programConfiguration.updatePaintBuffers(crossfade);
-        } else if (dasharray && (programChanged || painter.lineAtlas.dirty)) {
-            context.activeTexture.set(gl.TEXTURE0);
-            painter.lineAtlas.bind(context);
+        } else if (dasharray) {
+            if ((programChanged || painter.lineAtlas.dirty)) {
+                context.activeTexture.set(gl.TEXTURE0);
+                painter.lineAtlas.bind(context);
+            }
+            programConfiguration.updatePaintBuffers(crossfade);
         } else if (gradient) {
             const layerGradient = bucket.gradients[layer.id];
             let gradientTexture = layerGradient.texture;
@@ -128,13 +139,7 @@ export function drawLine(painter: Painter, sourceCache: SourceCache, layer: Line
             gradientTexture.bind(layer.stepInterpolant ? gl.NEAREST : gl.LINEAR, gl.CLAMP_TO_EDGE);
         }
 
-        let stencil: StencilMode;
-        if (isRenderingToTexture) {
-            const [stencilModes] = painter.getStencilConfigForOverlapAndUpdateStencilID(coords);
-            stencil = stencilModes[coord.overscaledZ];
-        } else {
-            stencil = painter.stencilModeForClipping(coord);
-        }
+        const stencil = painter.stencilModeForClipping(coord);
 
         program.draw(context, gl.TRIANGLES, depthMode,
             stencil, colorMode, CullFaceMode.disabled, uniformValues, terrainData, projectionData,

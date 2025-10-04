@@ -336,9 +336,9 @@ export class Placement {
         getElevation?: (x: number, y: number) => number,
         simpleProjectionMatrix?: mat4,
     ): {
-            shift: Point;
-            placedGlyphBoxes: PlacedBox;
-        } {
+        shift: Point;
+        placedGlyphBoxes: PlacedBox;
+    } {
 
         const anchor = TextAnchorEnum[textAnchorOffset.textAnchor] as TextAnchor;
         const textOffset = [textAnchorOffset.textOffset0, textAnchorOffset.textOffset1] as [number, number];
@@ -683,7 +683,7 @@ export class Placement {
             placeText = placedGlyphBoxes && placedGlyphBoxes.placeable;
             offscreen = placedGlyphBoxes && placedGlyphBoxes.offscreen;
 
-            if (symbolInstance.useRuntimeCollisionCircles) {
+            if (symbolInstance.useRuntimeCollisionCircles && symbolInstance.centerJustifiedTextSymbolIndex >= 0) {
                 const placedSymbol = bucket.text.placedSymbolArray.get(symbolInstance.centerJustifiedTextSymbolIndex);
                 const fontSize = symbolSize.evaluateSizeForFeature(bucket.textSizeData, partiallyEvaluatedTextSize, placedSymbol);
 

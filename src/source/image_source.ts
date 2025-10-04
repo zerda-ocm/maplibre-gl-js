@@ -15,6 +15,8 @@ import type {
     VideoSourceSpecification
 } from '@maplibre/maplibre-gl-style-spec';
 import type Point from '@mapbox/point-geometry';
+import {MAX_TILE_ZOOM} from '../util/util';
+import {Bounds} from '../geo/bounds';
 
 /**
  * Four geographical coordinates,
@@ -25,7 +27,7 @@ import type Point from '@mapbox/point-geometry';
 export type Coordinates = [[number, number], [number, number], [number, number], [number, number]];
 
 /**
- * The options object for the {@link ImageSource#updateImage} method
+ * The options object for the {@link ImageSource.updateImage} method
  */
 export type UpdateImageOptions = {
     /**
@@ -36,6 +38,13 @@ export type UpdateImageOptions = {
      * The image coordinates
      */
     coordinates?: Coordinates;
+};
+
+export type CanonicalTileRange = {
+    minTileX: number;
+    minTileY: number;
+    maxTileX: number;
+    maxTileY: number;
 };
 
 /**
@@ -88,6 +97,11 @@ export class ImageSource extends Evented implements Source {
     maxzoom: number;
     tileSize: number;
     url: string;
+    /**
+     * This object is used to store the range of terrain tiles that overlap with this tile.
+     * It is relevant for image tiles, as the image exceeds single tile boundaries.
+     */
+    terrainTileRanges: {[zoom: string]: CanonicalTileRange};
 
     coordinates: Coordinates;
     tiles: {[_: string]: Tile};
@@ -213,6 +227,10 @@ export class ImageSource extends Evented implements Source {
         // render data
         this.tileID = getCoordinatesCenterTileID(cornerCoords);
 
+        // Compute tiles overlapping with the image. We need to know for which
+        // terrain tiles we have to render the image.
+        this.terrainTileRanges = this._getOverlappingTileRanges(cornerCoords);
+
         // Constrain min/max zoom to our tile's zoom level in order to force
         // SourceCache to request this tile (no matter what the map's zoom
         // level)
@@ -281,6 +299,37 @@ export class ImageSource extends Evented implements Source {
     hasTransition() {
         return false;
     }
+
+    /**
+     * Given a list of coordinates, determine overlapping tile ranges for all zoom levels.
+     *
+     * @returns Overlapping tile ranges for all zoom levels.
+     * @internal
+     */
+    private _getOverlappingTileRanges(
+        coords: Array<MercatorCoordinate>
+    ): {[zoom: string]: CanonicalTileRange} {
+        const {minX, minY, maxX, maxY} = Bounds.fromPoints(coords);
+
+        const ranges: {[zoom: string]: CanonicalTileRange} = {};
+
+        for (let z = 0; z <= MAX_TILE_ZOOM; z++) {
+            const tilesAtZoom = Math.pow(2, z);
+            const minTileX = Math.floor(minX * tilesAtZoom);
+            const minTileY = Math.floor(minY * tilesAtZoom);
+            const maxTileX = Math.floor(maxX * tilesAtZoom);
+            const maxTileY = Math.floor(maxY * tilesAtZoom);
+
+            ranges[z] = {
+                minTileX,
+                minTileY,
+                maxTileX,
+                maxTileY
+            };
+        }
+
+        return ranges;
+    }
 }
 
 /**
@@ -290,28 +339,18 @@ export class ImageSource extends Evented implements Source {
  * @internal
  */
 export function getCoordinatesCenterTileID(coords: Array<MercatorCoordinate>) {
-    let minX = Infinity;
-    let minY = Infinity;
-    let maxX = -Infinity;
-    let maxY = -Infinity;
+    const bounds = Bounds.fromPoints(coords);
 
-    for (const coord of coords) {
-        minX = Math.min(minX, coord.x);
-        minY = Math.min(minY, coord.y);
-        maxX = Math.max(maxX, coord.x);
-        maxY = Math.max(maxY, coord.y);
-    }
-
-    const dx = maxX - minX;
-    const dy = maxY - minY;
+    const dx = bounds.width();
+    const dy = bounds.height();
     const dMax = Math.max(dx, dy);
     const zoom = Math.max(0, Math.floor(-Math.log(dMax) / Math.LN2));
     const tilesAtZoom = Math.pow(2, zoom);
 
     return new CanonicalTileID(
         zoom,
-        Math.floor((minX + maxX) / 2 * tilesAtZoom),
-        Math.floor((minY + maxY) / 2 * tilesAtZoom));
+        Math.floor((bounds.minX + bounds.maxX) / 2 * tilesAtZoom),
+        Math.floor((bounds.minY + bounds.maxY) / 2 * tilesAtZoom));
 }
 
 function hasWrongWindingOrder(coords: Array<Point>) {
