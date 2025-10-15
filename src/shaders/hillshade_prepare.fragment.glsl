@@ -67,9 +67,6 @@ void main() {
     ) * tileSize / pow(2.0, exaggeration + (28.2562 - u_zoom));
 
     fragColor = clamp(vec4(
-        deriv.x / 2.0 + 0.5,
-        deriv.y / 2.0 + 0.5,
-        e*0.0005 + 1.0,
         deriv.x / 8.0 + 0.5,
         deriv.y / 8.0 + 0.5,
         1.0,

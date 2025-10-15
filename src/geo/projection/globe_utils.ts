@@ -86,7 +86,7 @@ export function getGlobeRadiusPixels(worldSize: number, latitudeDegrees: number)
     // should be the same for both globe and flat view.
     // For this reason we scale the globe up when map center is nearer to the poles.
     //return worldSize / (2.0 * Math.PI) / Math.cos(latitudeDegrees * Math.PI / 180);
-    return worldSize / (2.0 * Math.PI) / Math.cos(Math.PI / 180);
+    return worldSize / (2.0 * Math.PI);
 }
 
 /**
@@ -149,7 +149,7 @@ export function clampToSphere(center: vec3, radius: number, point: vec3) {
     return clamped;
 }
 
-function planetScaleAtLatitude(latitudeDegrees: number): number {
+export function planetScaleAtLatitude(latitudeDegrees: number): number {
     return Math.cos(latitudeDegrees * Math.PI / 180);
 }
 
