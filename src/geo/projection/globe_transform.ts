@@ -6,7 +6,7 @@ import {type LngLat, type LngLatLike,} from '../lng_lat';
 import {lerp} from '../../util/util';
 import type {OverscaledTileID, UnwrappedTileID, CanonicalTileID} from '../../source/tile_id';
 
-import type Point from '@mapbox/point-geometry';
+import Point from '@mapbox/point-geometry';
 import type {MercatorCoordinate} from '../mercator_coordinate';
 import type {LngLatBounds} from '../lng_lat_bounds';
 import type {Frustum} from '../../util/primitives/frustum';
@@ -314,6 +314,22 @@ export class GlobeTransform implements ITransform {
     }
 
     public projectTileCoordinates(x: number, y: number, unwrappedTileID: UnwrappedTileID, getElevation: (x: number, y: number) => number): PointProjection {
+        // When transitioning between projections, we need to interpolate the projected positions
+        // to match what the shader does with u_projection_transition. Otherwise collision boxes
+        // and labels will not align during the transition.
+        if (this._globeness > 0 && this._globeness < 1) {
+            const mercatorProjected = this._mercatorTransform.projectTileCoordinates(x, y, unwrappedTileID, getElevation);
+            const verticalProjected = this._verticalPerspectiveTransform.projectTileCoordinates(x, y, unwrappedTileID, getElevation);
+
+            return {
+                point: new Point(
+                    lerp(mercatorProjected.point.x, verticalProjected.point.x, this._globeness),
+                    lerp(mercatorProjected.point.y, verticalProjected.point.y, this._globeness)
+                ),
+                signedDistanceFromCamera: lerp(mercatorProjected.signedDistanceFromCamera, verticalProjected.signedDistanceFromCamera, this._globeness),
+                isOccluded: verticalProjected.isOccluded // Use globe occlusion during transition
+            };
+        }
         return this.currentTransform.projectTileCoordinates(x, y, unwrappedTileID, getElevation);
     }
 

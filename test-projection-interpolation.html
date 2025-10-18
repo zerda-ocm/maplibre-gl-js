@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Test Projection Interpolation Label Alignment</title>
+    <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no">
+    <script src="dist/maplibre-gl-dev.js"></script>
+    <link href="dist/maplibre-gl.css" rel="stylesheet">
+    <style>
+        body { margin: 0; padding: 0; }
+        #map { position: absolute; top: 0; bottom: 0; width: 100%; }
+        #info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: white;
+            padding: 10px;
+            border-radius: 3px;
+            font-family: monospace;
+            z-index: 1;
+        }
+    </style>
+</head>
+<body>
+<div id="info">
+    <div>Zoom level: <span id="zoom"></span></div>
+    <div>Projection interpolation test</div>
+    <div>Labels should align with collision boxes during zoom 10-12</div>
+</div>
+<div id="map"></div>
+<script>
+    const map = new maplibregl.Map({
+        container: 'map',
+        style: {
+            version: 8,
+            sources: {
+                'osm': {
+                    type: 'raster',
+                    tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+                    tileSize: 256,
+                    attribution: '&copy; OpenStreetMap Contributors',
+                    maxzoom: 19
+                },
+                'places': {
+                    type: 'geojson',
+                    data: {
+                        type: 'FeatureCollection',
+                        features: [
+                            {
+                                type: 'Feature',
+                                properties: { name: 'Test Label 1' },
+                                geometry: { type: 'Point', coordinates: [-74.006, 40.7128] }
+                            },
+                            {
+                                type: 'Feature',
+                                properties: { name: 'Test Label 2' },
+                                geometry: { type: 'Point', coordinates: [-73.935, 40.73] }
+                            },
+                            {
+                                type: 'Feature',
+                                properties: { name: 'Test Label 3' },
+                                geometry: { type: 'Point', coordinates: [-74.05, 40.689] }
+                            },
+                            {
+                                type: 'Feature',
+                                properties: { name: 'Very Long Label Name For Testing' },
+                                geometry: { type: 'Point', coordinates: [-73.98, 40.75] }
+                            }
+                        ]
+                    }
+                }
+            },
+            layers: [
+                {
+                    id: 'osm',
+                    type: 'raster',
+                    source: 'osm'
+                },
+                {
+                    id: 'place-labels',
+                    type: 'symbol',
+                    source: 'places',
+                    layout: {
+                        'text-field': ['get', 'name'],
+                        'text-font': ['Open Sans Regular'],
+                        'text-size': 14,
+                        'text-anchor': 'center'
+                    },
+                    paint: {
+                        'text-color': '#000000',
+                        'text-halo-color': '#ffffff',
+                        'text-halo-width': 2
+                    }
+                }
+            ],
+            projection: {
+                type: ['interpolate', ['linear'], ['zoom'], 10, 'vertical-perspective', 12, 'mercator']
+            }
+        },
+        center: [-74.006, 40.7128],
+        zoom: 11,
+        pitch: 45
+    });
+
+    map.on('load', () => {
+        // Enable collision box visualization for debugging
+        map.showCollisionBoxes = true;
+    });
+
+    map.on('zoom', () => {
+        document.getElementById('zoom').textContent = map.getZoom().toFixed(2);
+    });
+
+    map.on('moveend', () => {
+        document.getElementById('zoom').textContent = map.getZoom().toFixed(2);
+    });
+
+    // Initial zoom display
+    document.getElementById('zoom').textContent = map.getZoom().toFixed(2);
+</script>
+</body>
+</html>
