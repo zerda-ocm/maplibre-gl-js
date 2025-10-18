@@ -329,6 +329,7 @@ export class SymbolBucket implements Bucket {
     hasDependencies: boolean;
 
     textSizeData: SizeData;
+    textField2SizeData: SizeData;
     iconSizeData: SizeData;
 
     glyphOffsetArray: GlyphOffsetArray;
@@ -385,7 +386,32 @@ export class SymbolBucket implements Bucket {
         const layer = this.layers[0];
         const unevaluatedLayoutValues = layer._unevaluatedLayout._values;
 
-        this.textSizeData = getSizeData(this.zoom, unevaluatedLayoutValues['text-size']);
+        const textSizeValue = unevaluatedLayoutValues['text-size'];
+        const textField2SizeValue = unevaluatedLayoutValues['text-field2-size'] || textSizeValue;
+
+        const upgradeSizeData = (data: SizeData): SizeData => {
+            if (data.kind === 'constant') {
+                return {kind: 'source'};
+            } else if (data.kind === 'camera') {
+                return {
+                    kind: 'composite',
+                    minZoom: data.minZoom,
+                    maxZoom: data.maxZoom,
+                    interpolationType: data.interpolationType
+                };
+            }
+            return data;
+        };
+
+        const hasIndependentTextSize = !!unevaluatedLayoutValues['text-field2-size'];
+
+        this.textSizeData = getSizeData(this.zoom, textSizeValue);
+        this.textField2SizeData = getSizeData(this.zoom, textField2SizeValue);
+
+        if (hasIndependentTextSize) {
+            this.textSizeData = upgradeSizeData(this.textSizeData);
+            this.textField2SizeData = upgradeSizeData(this.textField2SizeData);
+        }
         this.iconSizeData = getSizeData(this.zoom, unevaluatedLayoutValues['icon-size']);
 
         const layout = this.layers[0].layout;
@@ -474,23 +500,23 @@ export class SymbolBucket implements Bucket {
         const stacks = options.glyphDependencies;
         const availableImages = options.availableImages;
         const globalProperties = new EvaluationParameters(this.zoom);
-        
+
         function generateSplitChars(namedColors: Record<string, [number, number, number]>): Map<string, Color> {
             const splitChars = new Map<string, Color>();
             let charCode = 0xE001; // Start of the Unicode Private Use Area
-        
+
             for (const colorName in namedColors) {
                 const rgb = namedColors[colorName];
                 const color = new Color(rgb[0] / 255, rgb[1] / 255, rgb[2] / 255, 1);
                 splitChars.set(String.fromCodePoint(charCode), color);
                 charCode++;
             }
-        
+
             return splitChars;
         }
-        
+
         const splitChars = generateSplitChars(namedColors);
-    
+
         function getSplitPoints(text, splitChars) {
             const splitPoints = [];
             for (let i = 0; i < text.length; i++) {

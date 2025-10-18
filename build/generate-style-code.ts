@@ -155,7 +155,8 @@ const symbolClonePairs: Array<[string, string]> = [
     ['text-field', 'text-field2'],
     ['text-anchor', 'text-field2-anchor'],
     ['text-offset', 'text-field2-offset'],
-    ['text-radial-offset', 'text-field2-radial-offset']
+    ['text-radial-offset', 'text-field2-radial-offset'],
+    ['text-size', 'text-field2-size']
 ];
 
 const layers: LayerPropertiesBundle[] = Object.keys(v8.layer.type.values).map((type) => {

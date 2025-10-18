@@ -12,6 +12,7 @@ import {RGBAImage} from '../../util/image';
 import {ImagePosition} from '../../render/image_atlas';
 import {type IndexedFeature, type PopulateParameters} from '../bucket';
 import {type StyleImage} from '../../style/style_image';
+import {SIZE_PACK_FACTOR} from '../../symbol/symbol_size';
 import glyphs from '../../../test/unit/assets/fontstack-glyphs.json' with {type: 'json'};
 import {type StyleGlyph} from '../../style/style_glyph';
 import {SubdivisionGranularitySetting} from '../../render/subdivision_granularity_settings';
@@ -281,6 +282,63 @@ describe('SymbolBucket', () => {
         expect(firstOffsets[0].anchor).toEqual(secondOffsets[0].anchor);
         expect(firstOffsets[0].offset[0]).toEqual(secondOffsets[0].offset[0]);
         expect(firstOffsets[0].offset[1]).not.toEqual(secondOffsets[0].offset[1]);
+    });
+
+    test('text-field2-size scales secondary text independently', () => {
+        const collisionArray = new CollisionBoxArray();
+        const primarySize = 10;
+        const secondarySize = 30;
+        const bucket = createSymbolBucket('size-control', 'Test', 'hello', collisionArray, {
+            'text-field2': 'world',
+            'text-size': primarySize,
+            'text-field2-size': secondarySize
+        });
+        const options = createPopulateOptions([]);
+        bucket.populate(features, options, undefined as any);
+
+        performSymbolLayout({
+            bucket,
+            glyphMap: stacks,
+            glyphPositions: {},
+            subdivisionGranularity: SubdivisionGranularitySetting.noSubdivision
+        } as any);
+
+        const primaryIndex = bucket.symbolInstanceIsTextField2.findIndex(flag => !flag);
+        const secondaryIndex = bucket.symbolInstanceIsTextField2.findIndex(flag => flag);
+
+        expect(primaryIndex).toBeGreaterThanOrEqual(0);
+        expect(secondaryIndex).toBeGreaterThanOrEqual(0);
+
+        const primaryInstance = bucket.symbolInstances.get(primaryIndex);
+        const secondaryInstance = bucket.symbolInstances.get(secondaryIndex);
+
+        const expectedPrimaryScale = bucket.tilePixelRatio * (primarySize / 24);
+        const expectedSecondaryScale = bucket.tilePixelRatio * (secondarySize / 24);
+
+        expect(primaryInstance.textBoxScale).toBeCloseTo(expectedPrimaryScale, 5);
+        expect(secondaryInstance.textBoxScale).toBeCloseTo(expectedSecondaryScale, 5);
+
+        const selectPlacedIndex = (instance: any) => {
+            const candidates = [
+                instance.centerJustifiedTextSymbolIndex,
+                instance.rightJustifiedTextSymbolIndex,
+                instance.leftJustifiedTextSymbolIndex,
+                instance.verticalPlacedTextSymbolIndex
+            ];
+            return candidates.find(index => index >= 0) ?? -1;
+        };
+
+        const primaryPlacedIndex = selectPlacedIndex(primaryInstance);
+        const secondaryPlacedIndex = selectPlacedIndex(secondaryInstance);
+
+        expect(primaryPlacedIndex).toBeGreaterThanOrEqual(0);
+        expect(secondaryPlacedIndex).toBeGreaterThanOrEqual(0);
+
+        const primaryPlaced = bucket.text.placedSymbolArray.get(primaryPlacedIndex);
+        const secondaryPlaced = bucket.text.placedSymbolArray.get(secondaryPlacedIndex);
+
+        expect(primaryPlaced.lowerSize).toBe(Math.round(primarySize * SIZE_PACK_FACTOR));
+        expect(secondaryPlaced.lowerSize).toBe(Math.round(secondarySize * SIZE_PACK_FACTOR));
     });
 
     test('text-field2 does not render without primary text', () => {

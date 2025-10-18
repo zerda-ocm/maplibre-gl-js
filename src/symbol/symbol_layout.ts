@@ -15,6 +15,7 @@ import {EXTENT} from '../data/extent';
 import {SymbolBucket} from '../data/bucket/symbol_bucket';
 import {EvaluationParameters} from '../style/evaluation_parameters';
 import {SIZE_PACK_FACTOR, MAX_PACKED_SIZE, MAX_GLYPH_ICON_SIZE} from './symbol_size';
+import type {SizeData} from './symbol_size';
 import ONE_EM from './one_em';
 import type {CanonicalTileID} from '../source/tile_id';
 import type {Shaping, PositionedIcon, TextJustify} from './shaping';
@@ -49,12 +50,19 @@ import type {SubdivisionGranularitySetting} from '../render/subdivision_granular
 //
 // (1) and (2) are stored in `bucket.layers[0].layout`. The remainder are below.
 //
+type TextSizeConfig = {
+    property: PossiblyEvaluatedPropertyValue<number>;
+    layoutSize: PossiblyEvaluatedPropertyValue<number>;
+    textMaxSize: PossiblyEvaluatedPropertyValue<number>;
+    compositeSizes?: [PossiblyEvaluatedPropertyValue<number>, PossiblyEvaluatedPropertyValue<number>];
+    sizeData: SizeData;
+};
+
 type Sizes = {
-    layoutTextSize: PossiblyEvaluatedPropertyValue<number>; // (3),
-    layoutIconSize: PossiblyEvaluatedPropertyValue<number>; // (3),
-    textMaxSize: PossiblyEvaluatedPropertyValue<number>;    // (4),
-    compositeTextSizes: [PossiblyEvaluatedPropertyValue<number>, PossiblyEvaluatedPropertyValue<number>]; // (5),
-    compositeIconSizes: [PossiblyEvaluatedPropertyValue<number>, PossiblyEvaluatedPropertyValue<number>]; // (5)
+    textPrimary: TextSizeConfig;
+    textSecondary: TextSizeConfig;
+    layoutIconSize: PossiblyEvaluatedPropertyValue<number>;
+    compositeIconSizes?: [PossiblyEvaluatedPropertyValue<number>, PossiblyEvaluatedPropertyValue<number>];
 };
 
 type ShapedTextOrientations = {
@@ -93,22 +101,47 @@ export function performSymbolLayout(args: {
     const layout = layer.layout;
     const unevaluatedLayoutValues = layer._unevaluatedLayout._values;
 
-    const sizes: Sizes = {
-        // Filled in below, if *SizeData.kind is 'composite'
-        // compositeIconSizes: undefined,
-        // compositeTextSizes: undefined,
-        layoutIconSize: unevaluatedLayoutValues['icon-size'].possiblyEvaluate(new EvaluationParameters(args.bucket.zoom + 1), args.canonical),
-        layoutTextSize: unevaluatedLayoutValues['text-size'].possiblyEvaluate(new EvaluationParameters(args.bucket.zoom + 1), args.canonical),
-        textMaxSize: unevaluatedLayoutValues['text-size'].possiblyEvaluate(new EvaluationParameters(18))
-    } as Sizes;
+    const textSizePrimaryProperty = layout.get('text-size');
+    const textSizeSecondaryProperty = layout.get('text-field2-size' as any) as PossiblyEvaluatedPropertyValue<number>;
+
+    const textSizePrimaryUnevaluated = unevaluatedLayoutValues['text-size'];
+    const textSizeSecondaryUnevaluated = unevaluatedLayoutValues['text-field2-size'] || textSizePrimaryUnevaluated;
+
+    const textPrimary: TextSizeConfig = {
+        property: textSizePrimaryProperty,
+        layoutSize: textSizePrimaryUnevaluated.possiblyEvaluate(new EvaluationParameters(args.bucket.zoom + 1), args.canonical),
+        textMaxSize: textSizePrimaryUnevaluated.possiblyEvaluate(new EvaluationParameters(18)),
+        sizeData: args.bucket.textSizeData
+    };
 
     if (args.bucket.textSizeData.kind === 'composite') {
         const {minZoom, maxZoom} = args.bucket.textSizeData;
-        sizes.compositeTextSizes = [
-            unevaluatedLayoutValues['text-size'].possiblyEvaluate(new EvaluationParameters(minZoom), args.canonical),
-            unevaluatedLayoutValues['text-size'].possiblyEvaluate(new EvaluationParameters(maxZoom), args.canonical)
+        textPrimary.compositeSizes = [
+            textSizePrimaryUnevaluated.possiblyEvaluate(new EvaluationParameters(minZoom), args.canonical),
+            textSizePrimaryUnevaluated.possiblyEvaluate(new EvaluationParameters(maxZoom), args.canonical)
         ];
     }
+
+    const textSecondary: TextSizeConfig = {
+        property: textSizeSecondaryProperty,
+        layoutSize: textSizeSecondaryUnevaluated.possiblyEvaluate(new EvaluationParameters(args.bucket.zoom + 1), args.canonical),
+        textMaxSize: textSizeSecondaryUnevaluated.possiblyEvaluate(new EvaluationParameters(18)),
+        sizeData: args.bucket.textField2SizeData
+    };
+
+    if (args.bucket.textField2SizeData.kind === 'composite') {
+        const {minZoom, maxZoom} = args.bucket.textField2SizeData;
+        textSecondary.compositeSizes = [
+            textSizeSecondaryUnevaluated.possiblyEvaluate(new EvaluationParameters(minZoom), args.canonical),
+            textSizeSecondaryUnevaluated.possiblyEvaluate(new EvaluationParameters(maxZoom), args.canonical)
+        ];
+    }
+
+    const sizes: Sizes = {
+        textPrimary,
+        textSecondary,
+        layoutIconSize: unevaluatedLayoutValues['icon-size'].possiblyEvaluate(new EvaluationParameters(args.bucket.zoom + 1), args.canonical)
+    };
 
     if (args.bucket.iconSizeData.kind === 'composite') {
         const {minZoom, maxZoom} = args.bucket.iconSizeData;
@@ -121,14 +154,15 @@ export function performSymbolLayout(args: {
     const lineHeight = layout.get('text-line-height') * ONE_EM;
     const textAlongLine = layout.get('text-rotation-alignment') !== 'viewport' && layout.get('symbol-placement') !== 'point';
     const keepUpright = layout.get('text-keep-upright');
-    const textSize = layout.get('text-size');
 
     // eslint-disable-next-line prefer-const
     for (let feature of args.bucket.features) {
-        
+
         const fontstack = layout.get('text-font').evaluate(feature, {}, args.canonical).join(',');
-        const layoutTextSizeThisZoom = textSize.evaluate(feature, {}, args.canonical);
-        const layoutTextSize = sizes.layoutTextSize.evaluate(feature, {}, args.canonical);
+        const isSecondaryText = !!feature.isTextField2;
+        const textConfig = isSecondaryText ? sizes.textSecondary : sizes.textPrimary;
+        const layoutTextSizeThisZoom = textConfig.property.evaluate(feature, {}, args.canonical);
+        const layoutTextSize = textConfig.layoutSize.evaluate(feature, {}, args.canonical);
         const layoutIconSize = sizes.layoutIconSize.evaluate(feature, {}, args.canonical);
 
         const shapedTextOrientations: ShapedTextOrientations = {
@@ -136,9 +170,8 @@ export function performSymbolLayout(args: {
             vertical: undefined
         };
         const text = feature.text;
-        
+
         let textOffset: [number, number] = [0, 0];
-        const isSecondaryText = !!feature.isTextField2;
 
         if (text) {
             const unformattedText = text.toString();
@@ -268,7 +301,7 @@ export function performSymbolLayout(args: {
         const shapedText = getDefaultHorizontalShaping(shapedTextOrientations.horizontal) || shapedTextOrientations.vertical;
         args.bucket.iconsInText = shapedText ? shapedText.iconsInText : false;
         if (shapedText || shapedIcon) {
-            const symbolIndices = addFeature(args.bucket, feature, shapedTextOrientations, shapedIcon, args.imageMap, sizes, layoutTextSize, layoutIconSize, textOffset, isSDFIcon, args.canonical, args.subdivisionGranularity);
+            const symbolIndices = addFeature(args.bucket, feature, shapedTextOrientations, shapedIcon, args.imageMap, sizes, textConfig, layoutTextSize, layoutIconSize, textOffset, isSDFIcon, args.canonical, args.subdivisionGranularity);
 
             const isSecondary = !!feature.isTextField2;
 
@@ -332,6 +365,7 @@ function addFeature(bucket: SymbolBucket,
     shapedIcon: PositionedIcon,
     imageMap: {[_: string]: StyleImage},
     sizes: Sizes,
+    textConfig: TextSizeConfig,
     layoutTextSize: number,
     layoutIconSize: number,
     textOffset: [number, number],
@@ -394,7 +428,7 @@ function addFeature(bucket: SymbolBucket,
             bucket.collisionBoxArray, feature.index, feature.sourceLayerIndex, bucket.index,
             textBoxScale, [textPadding, textPadding, textPadding, textPadding], textAlongLine, textOffset,
             iconBoxScale, iconPadding, iconAlongLine, iconOffset,
-            feature, sizes, isSDFIcon, canonical, layoutTextSize);
+            feature, sizes, textConfig, isSDFIcon, canonical, layoutTextSize);
     };
 
     if (symbolPlacement === 'line') {
@@ -507,26 +541,36 @@ function addTextVertices(bucket: SymbolBucket,
     placementTypes: Array<'vertical' | 'center' | 'left' | 'right'>,
     placedTextSymbolIndices: {[_: string]: number},
     placedIconIndex: number,
-    sizes: Sizes,
+    textConfig: TextSizeConfig,
     canonical: CanonicalTileID) {
     const glyphQuads = getGlyphQuads(anchor, shapedText, textOffset,
         layer, textAlongLine, feature, imageMap, bucket.allowVerticalPlacement);
 
-    const sizeData = bucket.textSizeData;
+    const sizeData = textConfig.sizeData;
     let textSizeData = null;
 
     if (sizeData.kind === 'source') {
         textSizeData = [
-            SIZE_PACK_FACTOR * layer.layout.get('text-size').evaluate(feature, {})
+            SIZE_PACK_FACTOR * textConfig.property.evaluate(feature, {}, canonical)
         ];
         if (textSizeData[0] > MAX_PACKED_SIZE) {
             warnOnce(`${bucket.layerIds[0]}: Value for "text-size" is >= ${MAX_GLYPH_ICON_SIZE}. Reduce your "text-size".`);
         }
     } else if (sizeData.kind === 'composite') {
-        textSizeData = [
-            SIZE_PACK_FACTOR * sizes.compositeTextSizes[0].evaluate(feature, {}, canonical),
-            SIZE_PACK_FACTOR * sizes.compositeTextSizes[1].evaluate(feature, {}, canonical)
-        ];
+        const compositeSizes = textConfig.compositeSizes;
+        if (compositeSizes) {
+            textSizeData = [
+                SIZE_PACK_FACTOR * compositeSizes[0].evaluate(feature, {}, canonical),
+                SIZE_PACK_FACTOR * compositeSizes[1].evaluate(feature, {}, canonical)
+            ];
+        }
+        if (!textSizeData) {
+            const evaluated = textConfig.property.evaluate(feature, {}, canonical);
+            textSizeData = [
+                SIZE_PACK_FACTOR * evaluated,
+                SIZE_PACK_FACTOR * evaluated
+            ];
+        }
         if (textSizeData[0] > MAX_PACKED_SIZE || textSizeData[1] > MAX_PACKED_SIZE) {
             warnOnce(`${bucket.layerIds[0]}: Value for "text-size" is >= ${MAX_GLYPH_ICON_SIZE}. Reduce your "text-size".`);
         }
@@ -591,6 +635,7 @@ function addSymbol(bucket: SymbolBucket,
     iconOffset: [number, number],
     feature: SymbolFeature,
     sizes: Sizes,
+    textConfig: TextSizeConfig,
     isSDFIcon: boolean,
     canonical: CanonicalTileID,
     layoutTextSize: number) {
@@ -705,7 +750,7 @@ function addSymbol(bucket: SymbolBucket,
             bucket, anchor, shaping, imageMap, layer, textAlongLine, feature, textOffset, lineArray,
             shapedTextOrientations.vertical ? WritingMode.horizontal : WritingMode.horizontalOnly,
             singleLine ? justifications : [justification],
-            placedTextSymbolIndices, placedIconSymbolIndex, sizes, canonical);
+            placedTextSymbolIndices, placedIconSymbolIndex, textConfig, canonical);
 
         if (singleLine) {
             break;
@@ -715,7 +760,7 @@ function addSymbol(bucket: SymbolBucket,
     if (shapedTextOrientations.vertical) {
         numVerticalGlyphVertices += addTextVertices(
             bucket, anchor, shapedTextOrientations.vertical, imageMap, layer, textAlongLine, feature,
-            textOffset, lineArray, WritingMode.vertical, ['vertical'], placedTextSymbolIndices, verticalPlacedIconSymbolIndex, sizes, canonical);
+            textOffset, lineArray, WritingMode.vertical, ['vertical'], placedTextSymbolIndices, verticalPlacedIconSymbolIndex, textConfig, canonical);
     }
 
     const textBoxStartIndex = textCollisionFeature ? textCollisionFeature.boxStartIndex : bucket.collisionBoxArray.length;
