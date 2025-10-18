@@ -60,4 +60,32 @@ describe('evaluate', () => {
         console.warn = warn;
     });
 
+    test('override halo width', () => {
+        const defaultWidth = 1;
+        const overriddenWidth = 0;
+        const overridden = new PossiblyEvaluatedPropertyValue(
+            properties.paint.properties['text-halo-width'],
+            {kind: 'constant', value: defaultWidth},
+            {zoom: 0, zoomHistory: {}} as EvaluationParameters
+        );
+
+        const override = new FormatSectionOverride(overridden);
+        const ctx = new EvaluationContext();
+        ctx.feature = {} as any;
+        ctx.featureState = {};
+
+        expect(override.evaluate(ctx)).toEqual(defaultWidth);
+
+        ctx.formattedSection = {
+            text: '',
+            image: null,
+            scale: null,
+            fontStack: null,
+            textColor: null,
+            verticalAlign: null,
+            textHaloWidth: overriddenWidth
+        } as unknown as FormattedSection;
+        expect(override.evaluate(ctx)).toEqual(overriddenWidth);
+    });
+
 });

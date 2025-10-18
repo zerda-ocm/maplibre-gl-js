@@ -36,6 +36,22 @@ describe('setPaintOverrides', () => {
 
     });
 
+    test('setPaintOverrides, text-field2 format expression, overridden text-halo-width', () => {
+        const props = {layout: {'text-field2': ['format', 'text', {'text-halo-width': 2}]}};
+        const layer = createSymbolLayer(props);
+        layer._setPaintOverrides();
+        expect(isOverridden(layer.paint.get('text-halo-width'))).toBe(true);
+
+    });
+
+    test('setPaintOverrides, text-field2 format expression, overridden text-halo-width zero', () => {
+        const props = {layout: {'text-field2': ['format', 'text', {'text-halo-width': 0}]}};
+        const layer = createSymbolLayer(props);
+        layer._setPaintOverrides();
+        expect(isOverridden(layer.paint.get('text-halo-width'))).toBe(true);
+
+    });
+
     test('setPaintOverrides, format expression, no overrides', () => {
         const props = {layout: {'text-field': ['format', 'text', {}]}};
         const layer = createSymbolLayer(props);
@@ -57,6 +73,20 @@ describe('hasPaintOverrides', () => {
         const props = {layout: {'text-field': ['format', 'text', {'text-color': 'red'}]}};
         const layer = createSymbolLayer(props);
         expect(SymbolStyleLayer.hasPaintOverride(layer.layout, 'text-color')).toBe(true);
+
+    });
+
+    test('constant, Formatted type on text-field2, overridden text-halo-color', () => {
+        const props = {layout: {'text-field2': ['format', 'text', {'text-halo-color': 'red'}]}};
+        const layer = createSymbolLayer(props);
+        expect(SymbolStyleLayer.hasPaintOverride(layer.layout, 'text-halo-color')).toBe(true);
+
+    });
+
+    test('constant, Formatted type on text-field2, overridden text-halo-width zero', () => {
+        const props = {layout: {'text-field2': ['format', 'text', {'text-halo-width': 0}]}};
+        const layer = createSymbolLayer(props);
+        expect(SymbolStyleLayer.hasPaintOverride(layer.layout, 'text-halo-width')).toBe(true);
 
     });
 

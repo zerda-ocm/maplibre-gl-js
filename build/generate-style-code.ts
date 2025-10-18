@@ -118,7 +118,7 @@ function runtimeType(property) {
 }
 
 function overrides(property) {
-    return `{ runtimeType: ${runtimeType(property)}, getOverride: (o) => o.${camelCase(property.name)}, hasOverride: (o) => !!o.${camelCase(property.name)} }`;
+    return `{ runtimeType: ${runtimeType(property)}, getOverride: (o) => o.${camelCase(property.name)}, hasOverride: (o) => o.${camelCase(property.name)} !== undefined && o.${camelCase(property.name)} !== null }`;
 }
 
 function propertyValue(property, type) {
@@ -173,6 +173,19 @@ const layers: LayerPropertiesBundle[] = Object.keys(v8.layer.type.values).map((t
                 v8[`layout_${type}`][target] = clonedSpec;
             }
         }
+
+        const haloOverrides = ['text-halo-color', 'text-halo-width', 'text-halo-blur'];
+        for (const propertyName of haloOverrides) {
+            const propertySpec = v8[`paint_${type}`][propertyName];
+            if (!propertySpec) {
+                continue;
+            }
+            propertySpec.overridable = true;
+            const requires = new Set(propertySpec.requires || []);
+            requires.add('text-field');
+            requires.add('text-field2');
+            propertySpec.requires = Array.from(requires);
+        }
     }
 
     const layoutProperties = Object.keys(v8[`layout_${type}`]).reduce<any[]>((memo, name) => {
@@ -225,11 +238,33 @@ import {StylePropertySpecification} from '@maplibre/maplibre-gl-style-spec';
 
     const overridables = paintProperties.filter((p: any) => p.overridable);
     if (overridables.length) {
-        const overridesArray = `import {
-            ${overridables.reduce((imports: any[], prop: any) => { imports.push(runtimeType(prop)); return imports; }, []).join(',\n    ')}
-        } from '@maplibre/maplibre-gl-style-spec';
+        const overrideTypes = Array.from(new Set(overridables.map((prop: any) => runtimeType(prop))));
+        const overridesByModule = new Map<string, Set<string>>();
+
+        const importPathForType = (typeName: string) => {
+            switch (typeName) {
+                case 'NumberType':
+                    return '@maplibre/maplibre-gl-style-spec/src/expression/types.js';
+                default:
+                    return '@maplibre/maplibre-gl-style-spec';
+            }
+        };
+
+        for (const typeName of overrideTypes) {
+            const modulePath = importPathForType(typeName);
+            if (!overridesByModule.has(modulePath)) {
+                overridesByModule.set(modulePath, new Set<string>());
+            }
+            overridesByModule.get(modulePath)!.add(typeName);
+        }
+
+        for (const [modulePath, names] of overridesByModule.entries()) {
+            const overridesArray = `import {
+            ${Array.from(names).join(',\n    ')}
+        } from '${modulePath}';
         `;
-        output.push(overridesArray);
+            output.push(overridesArray);
+        }
     }
 
     if (layoutProperties.length) {
