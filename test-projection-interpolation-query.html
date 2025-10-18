@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Test Projection Interpolation - Labels & Query Features</title>
+    <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no">
+    <script src="dist/maplibre-gl-dev.js"></script>
+    <link href="dist/maplibre-gl.css" rel="stylesheet">
+    <style>
+        body { margin: 0; padding: 0; }
+        #map { position: absolute; top: 0; bottom: 0; width: 100%; }
+        #info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: white;
+            padding: 10px;
+            border-radius: 3px;
+            font-family: monospace;
+            z-index: 1;
+            max-width: 400px;
+        }
+        #clicked-feature {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #ccc;
+        }
+    </style>
+</head>
+<body>
+<div id="info">
+    <div><strong>Test: Projection Interpolation</strong></div>
+    <div>Zoom level: <span id="zoom"></span></div>
+    <div style="margin-top: 8px;">
+        ✓ Labels should align with collision boxes<br>
+        ✓ Click on lines should detect features correctly
+    </div>
+    <div id="clicked-feature"></div>
+</div>
+<div id="map"></div>
+<script>
+    const map = new maplibregl.Map({
+        container: 'map',
+        style: {
+            version: 8,
+            sources: {
+                'osm': {
+                    type: 'raster',
+                    tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+                    tileSize: 256,
+                    attribution: '&copy; OpenStreetMap Contributors',
+                    maxzoom: 19
+                },
+                'lines': {
+                    type: 'geojson',
+                    data: {
+                        type: 'FeatureCollection',
+                        features: [
+                            {
+                                type: 'Feature',
+                                properties: { name: 'Main Street', type: 'primary' },
+                                geometry: {
+                                    type: 'LineString',
+                                    coordinates: [
+                                        [-74.02, 40.705],
+                                        [-74.02, 40.72],
+                                        [-73.99, 40.72]
+                                    ]
+                                }
+                            },
+                            {
+                                type: 'Feature',
+                                properties: { name: 'Broadway', type: 'secondary' },
+                                geometry: {
+                                    type: 'LineString',
+                                    coordinates: [
+                                        [-74.01, 40.71],
+                                        [-74.00, 40.715],
+                                        [-73.99, 40.71]
+                                    ]
+                                }
+                            },
+                            {
+                                type: 'Feature',
+                                properties: { name: '5th Avenue', type: 'primary' },
+                                geometry: {
+                                    type: 'LineString',
+                                    coordinates: [
+                                        [-73.98, 40.705],
+                                        [-73.98, 40.722]
+                                    ]
+                                }
+                            }
+                        ]
+                    }
+                },
+                'places': {
+                    type: 'geojson',
+                    data: {
+                        type: 'FeatureCollection',
+                        features: [
+                            {
+                                type: 'Feature',
+                                properties: { name: 'City Hall', type: 'landmark' },
+                                geometry: { type: 'Point', coordinates: [-74.006, 40.7128] }
+                            },
+                            {
+                                type: 'Feature',
+                                properties: { name: 'Park', type: 'park' },
+                                geometry: { type: 'Point', coordinates: [-73.98, 40.715] }
+                            },
+                            {
+                                type: 'Feature',
+                                properties: { name: 'Museum', type: 'landmark' },
+                                geometry: { type: 'Point', coordinates: [-74.01, 40.708] }
+                            }
+                        ]
+                    }
+                }
+            },
+            layers: [
+                {
+                    id: 'osm',
+                    type: 'raster',
+                    source: 'osm'
+                },
+                {
+                    id: 'lines',
+                    type: 'line',
+                    source: 'lines',
+                    paint: {
+                        'line-color': [
+                            'match',
+                            ['get', 'type'],
+                            'primary', '#ff6b6b',
+                            'secondary', '#4ecdc4',
+                            '#95a5a6'
+                        ],
+                        'line-width': 5
+                    }
+                },
+                {
+                    id: 'line-labels',
+                    type: 'symbol',
+                    source: 'lines',
+                    layout: {
+                        'text-field': ['get', 'name'],
+                        'text-font': ['Open Sans Regular'],
+                        'text-size': 12,
+                        'symbol-placement': 'line',
+                        'text-rotation-alignment': 'map'
+                    },
+                    paint: {
+                        'text-color': '#000000',
+                        'text-halo-color': '#ffffff',
+                        'text-halo-width': 2
+                    }
+                },
+                {
+                    id: 'place-labels',
+                    type: 'symbol',
+                    source: 'places',
+                    layout: {
+                        'text-field': ['get', 'name'],
+                        'text-font': ['Open Sans Regular'],
+                        'text-size': 14,
+                        'text-anchor': 'center',
+                        'icon-image': 'marker',
+                        'icon-size': 1.5
+                    },
+                    paint: {
+                        'text-color': '#2c3e50',
+                        'text-halo-color': '#ffffff',
+                        'text-halo-width': 2
+                    }
+                }
+            ],
+            projection: {
+                type: ['interpolate', ['linear'], ['zoom'], 10, 'vertical-perspective', 12, 'mercator']
+            }
+        },
+        center: [-74.006, 40.7128],
+        zoom: 11,
+        pitch: 45
+    });
+
+    map.on('load', () => {
+        // Enable collision box visualization for debugging
+        map.showCollisionBoxes = true;
+    });
+
+    // Update zoom display
+    const updateZoom = () => {
+        document.getElementById('zoom').textContent = map.getZoom().toFixed(2);
+    };
+
+    map.on('zoom', updateZoom);
+    map.on('moveend', updateZoom);
+    updateZoom();
+
+    // Test queryRenderedFeatures on click
+    map.on('click', (e) => {
+        const features = map.queryRenderedFeatures(e.point, {
+            layers: ['lines', 'place-labels']
+        });
+
+        const clickedDiv = document.getElementById('clicked-feature');
+        
+        if (features.length > 0) {
+            const feature = features[0];
+            clickedDiv.innerHTML = `
+                <strong>Clicked Feature:</strong><br>
+                Layer: ${feature.layer.id}<br>
+                Name: ${feature.properties.name}<br>
+                Type: ${feature.properties.type}<br>
+                <span style="color: green;">✓ Query works correctly!</span>
+            `;
+        } else {
+            clickedDiv.innerHTML = `
+                <strong>No features at click point</strong><br>
+                <span style="color: gray;">Click on a line or label</span>
+            `;
+        }
+    });
+
+    // Make cursor pointer over features
+    map.on('mousemove', (e) => {
+        const features = map.queryRenderedFeatures(e.point, {
+            layers: ['lines', 'place-labels']
+        });
+        map.getCanvas().style.cursor = features.length > 0 ? 'pointer' : '';
+    });
+</script>
+</body>
+</html>
