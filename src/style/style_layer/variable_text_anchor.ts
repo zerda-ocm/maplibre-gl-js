@@ -3,6 +3,7 @@ import {type SymbolFeature} from '../../data/bucket/symbol_bucket';
 import {type CanonicalTileID} from '../../source/tile_id';
 import ONE_EM from '../../symbol/one_em';
 import {type SymbolStyleLayer} from './symbol_style_layer';
+import type {PossiblyEvaluatedPropertyValue} from '../properties';
 
 export enum TextAnchorEnum {
     'center' = 1,
@@ -111,6 +112,7 @@ export function evaluateVariableOffset(anchor: TextAnchor, offset: [number, numb
 // Helper to support both text-variable-anchor and text-variable-anchor-offset. Offset values converted from EMs to PXs
 export function getTextVariableAnchorOffset(layer: SymbolStyleLayer, feature: SymbolFeature, canonical: CanonicalTileID): VariableAnchorOffsetCollection | null {
     const layout = layer.layout;
+    const isSecondary = !!feature?.isTextField2;
     // If style specifies text-variable-anchor-offset, just return it
     const variableAnchorOffset = layout.get('text-variable-anchor-offset')?.evaluate(feature, {}, canonical);
 
@@ -144,10 +146,16 @@ export function getTextVariableAnchorOffset(layer: SymbolStyleLayer, feature: Sy
 
         // The style spec says don't use `text-offset` and `text-radial-offset` together
         // but doesn't actually specify what happens if you use both. We go with the radial offset.
-        if (unevaluatedLayout.getValue('text-radial-offset') !== undefined) {
-            textOffset = [layout.get('text-radial-offset').evaluate(feature, {}, canonical) * ONE_EM, INVALID_TEXT_OFFSET];
+        const radialPropertyName = isSecondary ? 'text-field2-radial-offset' : 'text-radial-offset';
+        const offsetPropertyName = isSecondary ? 'text-field2-offset' : 'text-offset';
+
+        const radialProperty = layout.get(radialPropertyName as any) as PossiblyEvaluatedPropertyValue<number>;
+        const offsetProperty = layout.get(offsetPropertyName as any) as PossiblyEvaluatedPropertyValue<[number, number]>;
+
+        if (unevaluatedLayout.getValue(radialPropertyName as any) !== undefined) {
+            textOffset = [radialProperty.evaluate(feature, {}, canonical) * ONE_EM, INVALID_TEXT_OFFSET];
         } else {
-            textOffset = layout.get('text-offset').evaluate(feature, {}, canonical).map(t => t * ONE_EM) as [number, number];
+            textOffset = offsetProperty.evaluate(feature, {}, canonical).map(t => t * ONE_EM) as [number, number];
         }
 
         const anchorOffsets: VariableAnchorOffsetCollectionSpecification = [];

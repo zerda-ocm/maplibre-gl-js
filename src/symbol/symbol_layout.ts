@@ -87,6 +87,8 @@ export function performSymbolLayout(args: {
     args.bucket.compareText = {};
     args.bucket.iconsNeedLinear = false;
 
+    const primarySymbolByFeatureIndex = new Map<number, number[]>();
+
     const layer = args.bucket.layers[0];
     const layout = layer.layout;
     const unevaluatedLayoutValues = layer._unevaluatedLayout._values;
@@ -136,6 +138,8 @@ export function performSymbolLayout(args: {
         const text = feature.text;
         
         let textOffset: [number, number] = [0, 0];
+        const isSecondaryText = !!feature.isTextField2;
+
         if (text) {
             const unformattedText = text.toString();
             //console.log(feature);
@@ -144,11 +148,13 @@ export function performSymbolLayout(args: {
             const spacing = layout.get('text-letter-spacing').evaluate(feature, {}, args.canonical) * ONE_EM;
             const spacingIfAllowed = allowsLetterSpacing(unformattedText) ? spacing : 0;
 
-            const textAnchor = layout.get('text-anchor').evaluate(feature, {}, args.canonical);
+            const textAnchorProperty = isSecondaryText ? layout.get('text-field2-anchor' as any) : layout.get('text-anchor');
+            const textAnchor = (textAnchorProperty as PossiblyEvaluatedPropertyValue<any>).evaluate(feature, {}, args.canonical);
             const variableAnchorOffset = getTextVariableAnchorOffset(layer, feature, args.canonical);
 
             if (!variableAnchorOffset) {
-                const radialOffset = layout.get('text-radial-offset').evaluate(feature, {}, args.canonical);
+                const radialOffsetProperty = isSecondaryText ? layout.get('text-field2-radial-offset' as any) : layout.get('text-radial-offset');
+                const radialOffset = (radialOffsetProperty as PossiblyEvaluatedPropertyValue<number>).evaluate(feature, {}, args.canonical);
                 // Layers with variable anchors use the `text-radial-offset` property and the [x, y] offset vector
                 // is calculated at placement time instead of layout time
                 if (radialOffset) {
@@ -156,7 +162,10 @@ export function performSymbolLayout(args: {
                     // but doesn't actually specify what happens if you use both. We go with the radial offset.
                     textOffset = evaluateVariableOffset(textAnchor, [radialOffset * ONE_EM, INVALID_TEXT_OFFSET]);
                 } else {
-                    textOffset = (layout.get('text-offset').evaluate(feature, {}, args.canonical).map(t => t * ONE_EM) as [number, number]);
+                    const offsetProperty = isSecondaryText ? layout.get('text-field2-offset' as any) : layout.get('text-offset');
+                    textOffset = ((offsetProperty as PossiblyEvaluatedPropertyValue<[number, number]>)
+                        .evaluate(feature, {}, args.canonical)
+                        .map(t => t * ONE_EM) as [number, number]);
                 }
             }
 
@@ -259,7 +268,35 @@ export function performSymbolLayout(args: {
         const shapedText = getDefaultHorizontalShaping(shapedTextOrientations.horizontal) || shapedTextOrientations.vertical;
         args.bucket.iconsInText = shapedText ? shapedText.iconsInText : false;
         if (shapedText || shapedIcon) {
-            addFeature(args.bucket, feature, shapedTextOrientations, shapedIcon, args.imageMap, sizes, layoutTextSize, layoutIconSize, textOffset, isSDFIcon, args.canonical, args.subdivisionGranularity);
+            const symbolIndices = addFeature(args.bucket, feature, shapedTextOrientations, shapedIcon, args.imageMap, sizes, layoutTextSize, layoutIconSize, textOffset, isSDFIcon, args.canonical, args.subdivisionGranularity);
+
+            const isSecondary = !!feature.isTextField2;
+
+            if (isSecondary) {
+                const primaryQueue = primarySymbolByFeatureIndex.get(feature.index) ?? [];
+                for (let i = 0; i < symbolIndices.length; i++) {
+                    const primaryIndex = primaryQueue.length ? primaryQueue.shift()! : -1;
+                    args.bucket.symbolInstanceIsTextField2.push(true);
+                    args.bucket.symbolInstancePrimary.push(primaryIndex);
+                }
+                if (primaryQueue.length > 0) {
+                    primarySymbolByFeatureIndex.set(feature.index, primaryQueue);
+                } else {
+                    primarySymbolByFeatureIndex.delete(feature.index);
+                }
+            } else {
+                const queue = feature.text ? (primarySymbolByFeatureIndex.get(feature.index) ?? []) : null;
+                for (const symbolIndex of symbolIndices) {
+                    args.bucket.symbolInstanceIsTextField2.push(false);
+                    args.bucket.symbolInstancePrimary.push(-1);
+                    if (queue) {
+                        queue.push(symbolIndex);
+                    }
+                }
+                if (queue) {
+                    primarySymbolByFeatureIndex.set(feature.index, queue);
+                }
+            }
         }
     }
 
@@ -300,7 +337,7 @@ function addFeature(bucket: SymbolBucket,
     textOffset: [number, number],
     isSDFIcon: boolean,
     canonical: CanonicalTileID,
-    subdivisionGranularity: SubdivisionGranularitySetting) {
+    subdivisionGranularity: SubdivisionGranularitySetting): number[] {
     // To reduce the number of labels that jump around when zooming we need
     // to use a text-size value that is the same for all zoom levels.
     // bucket calculates text-size at a high zoom level so that all tiles can
@@ -330,6 +367,7 @@ function addFeature(bucket: SymbolBucket,
         textRepeatDistance = symbolMinDistance / 2;
 
     const iconTextFit = layout.get('icon-text-fit');
+    const symbolStartIndex = bucket.symbolInstances.length;
     let verticallyShapedIcon;
     // Adjust shaped icon size when icon-text-fit is used.
     if (shapedIcon && iconTextFit !== 'none') {
@@ -375,7 +413,7 @@ function addFeature(bucket: SymbolBucket,
             );
             for (const anchor of anchors) {
                 const shapedText = defaultHorizontalShaping;
-                if (!shapedText || !anchorIsTooClose(bucket, shapedText.text, textRepeatDistance, anchor)) {
+                if (!shapedText || !anchorIsTooClose(bucket, shapedText.text, textRepeatDistance, anchor, feature.isTextField2)) {
                     addSymbolAtAnchor(subdividedLine, anchor);
                 }
             }
@@ -423,6 +461,18 @@ function addFeature(bucket: SymbolBucket,
             }
         }
     }
+
+    const symbolCount = bucket.symbolInstances.length - symbolStartIndex;
+    if (symbolCount <= 0) {
+        return [];
+    }
+
+    const symbolIndices: number[] = [];
+    for (let i = 0; i < symbolCount; i++) {
+        symbolIndices.push(symbolStartIndex + i);
+    }
+
+    return symbolIndices;
 }
 
 function addTextVariableAnchorOffsets(textAnchorOffsets: TextAnchorOffsetArray, variableAnchorOffset: VariableAnchorOffsetCollection): [number, number] {
@@ -743,7 +793,10 @@ function addSymbol(bucket: SymbolBucket,
         textAnchorOffsetEndIndex);
 }
 
-function anchorIsTooClose(bucket: SymbolBucket, text: string, repeatDistance: number, anchor: Point) {
+function anchorIsTooClose(bucket: SymbolBucket, text: string, repeatDistance: number, anchor: Point, isTextField2?: boolean) {
+    if (isTextField2) {
+        return false;
+    }
     const compareText = bucket.compareText;
     if (!(text in compareText)) {
         compareText[text] = [];

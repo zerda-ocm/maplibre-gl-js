@@ -81,13 +81,14 @@ export type CollisionArrays = {
 export type SymbolFeature = {
     sortKey: number | void;
     text: Formatted | void;
-    icon: ResolvedImage;
+    icon?: ResolvedImage;
     index: number;
     sourceLayerIndex: number;
     geometry: Array<Array<Point>>;
     properties: any;
     type: 'Unknown' | 'Point' | 'LineString' | 'Polygon';
     id?: any;
+    isTextField2?: boolean;
 };
 
 export type SortKeyRange = {
@@ -335,6 +336,8 @@ export class SymbolBucket implements Bucket {
     features: Array<SymbolFeature>;
     symbolInstances: SymbolInstanceArray;
     textAnchorOffsets: TextAnchorOffsetArray;
+    symbolInstanceIsTextField2: Array<boolean>;
+    symbolInstancePrimary: Array<number>;
     collisionArrays: Array<CollisionArrays>;
     sortKeyRanges: Array<SortKeyRange>;
     pixelRatio: number;
@@ -376,6 +379,9 @@ export class SymbolBucket implements Bucket {
 
         this.collisionCircleArray = [];
 
+        this.symbolInstanceIsTextField2 = [];
+        this.symbolInstancePrimary = [];
+
         const layer = this.layers[0];
         const unevaluatedLayoutValues = layer._unevaluatedLayout._values;
 
@@ -411,6 +417,8 @@ export class SymbolBucket implements Bucket {
         this.lineVertexArray = new SymbolLineVertexArray();
         this.symbolInstances = new SymbolInstanceArray();
         this.textAnchorOffsets = new TextAnchorOffsetArray();
+        this.symbolInstanceIsTextField2 = [];
+        this.symbolInstancePrimary = [];
     }
 
     private calculateGlyphDependencies(
@@ -437,11 +445,17 @@ export class SymbolBucket implements Bucket {
 
         const textFont = layout.get('text-font');
         const textField = layout.get('text-field');
+        const textField2 = layout.get('text-field2');
         const iconImage = layout.get('icon-image');
         const hasText =
             (textField.value.kind !== 'constant' ||
                 (textField.value.value instanceof Formatted && !textField.value.value.isEmpty()) ||
                 textField.value.value.toString().length > 0) &&
+            (textFont.value.kind !== 'constant' || textFont.value.value.length > 0);
+        const hasSecondaryText =
+            (textField2.value.kind !== 'constant' ||
+                (textField2.value.value instanceof Formatted && !textField2.value.value.isEmpty()) ||
+                textField2.value.value.toString().length > 0) &&
             (textFont.value.kind !== 'constant' || textFont.value.value.length > 0);
         // we should always resolve the icon-image value if the property was defined in the style
         // this allows us to fire the styleimagemissing event if image evaluation returns null
@@ -452,7 +466,7 @@ export class SymbolBucket implements Bucket {
 
         this.features = [];
 
-        if (!hasText && !hasIcon) {
+        if (!hasText && !hasSecondaryText && !hasIcon) {
             return;
         }
 
@@ -487,6 +501,39 @@ export class SymbolBucket implements Bucket {
             return splitPoints;
         }
 
+        const applyColorSplit = (formattedText: Formatted | void): Formatted | void => {
+            if (!formattedText) return formattedText;
+
+            const updatedSections = [];
+            for (const originalSection of formattedText.sections) {
+                const sectionText = originalSection.text;
+                const splitPoints = getSplitPoints(sectionText, splitChars);
+                if (splitPoints.length > 0) {
+                    let lastSplitIndex = 0;
+                    for (let i = 0; i < splitPoints.length; i++) {
+                        const splitPoint = splitPoints[i];
+                        updatedSections.push({
+                            ...originalSection,
+                            text: sectionText.substring(lastSplitIndex, splitPoint + 1),
+                            textColor: i === 0 ? originalSection.textColor : splitChars.get(sectionText[splitPoints[i - 1]])
+                        });
+                        lastSplitIndex = splitPoint + 1;
+                    }
+                    if (lastSplitIndex < sectionText.length) {
+                        updatedSections.push({
+                            ...originalSection,
+                            text: sectionText.substring(lastSplitIndex),
+                            textColor: splitChars.get(sectionText[splitPoints[splitPoints.length - 1]])
+                        });
+                    }
+                } else {
+                    updatedSections.push(originalSection);
+                }
+            }
+            formattedText.sections = updatedSections;
+            return formattedText;
+        };
+
         for (const {feature, id, index, sourceLayerIndex} of features) {
 
             const needGeometry = layer._featureFilter.needGeometry;
@@ -495,66 +542,34 @@ export class SymbolBucket implements Bucket {
                 continue;
             }
 
-            if (!needGeometry)  evaluationFeature.geometry = loadGeometry(feature);
+            if (!needGeometry) evaluationFeature.geometry = loadGeometry(feature);
 
-            let text: Formatted | void;
-            if (hasText) {
-                // Expression evaluation will automatically coerce to Formatted
-                // but plain string token evaluation skips that pathway so do the
-                // conversion here.
-                const resolvedTokens = layer.getValueAndResolveTokens('text-field', evaluationFeature, canonical, availableImages);
-                const formattedText = Formatted.factory(resolvedTokens);
-                
-                // check for color escape sequences
-                if (formattedText) {
-                    const updatedSections = [];
-                    for (const originalSection of formattedText.sections) {
-                        const text = originalSection.text;
-                        const splitPoints = getSplitPoints(text, splitChars);
-                        if (splitPoints.length > 0) {
-                            let lastSplitIndex = 0;  
-                            for (let i = 0; i < splitPoints.length; i++) {
-                                const splitPoint = splitPoints[i];
-                                updatedSections.push({
-                                    ...originalSection,
-                                    text: text.substring(lastSplitIndex, splitPoint + 1),
-                                    textColor: i === 0 ? originalSection.textColor : splitChars.get(text[splitPoints[i - 1]])
-                                });   
-                                lastSplitIndex = splitPoint + 1;
-                            }     
-                            // Add the last section
-                            if (lastSplitIndex < text.length) {
-                                updatedSections.push({
-                                    ...originalSection,
-                                    text: text.substring(lastSplitIndex),
-                                    textColor: splitChars.get(text[splitPoints[splitPoints.length - 1]])
-                                });
-                            }
-                        } else {
-                            // No split points found, keep the original section
-                            updatedSections.push(originalSection);
-                        }
-                    }        
-                    // Replace all original sections with the updated sections
-                    formattedText.sections = updatedSections;
+            const evaluateText = (propertyName: 'text-field' | 'text-field2', shouldEvaluate: boolean): Formatted | void => {
+                if (!shouldEvaluate) {
+                    return undefined;
                 }
-            
-                // on this instance: if hasRTLText is already true, all future calls to containsRTLText can be skipped.
+                const resolvedTokens = layer.getValueAndResolveTokens(propertyName, evaluationFeature, canonical, availableImages);
+                const formattedText = applyColorSplit(Formatted.factory(resolvedTokens));
+                if (!formattedText || formattedText.isEmpty()) {
+                    return undefined;
+                }
+
                 const bucketHasRTLText = this.hasRTLText = (this.hasRTLText || containsRTLText(formattedText));
                 if (
-                    !bucketHasRTLText || // non-rtl text so can proceed safely
-                    rtlWorkerPlugin.getRTLTextPluginStatus() === 'unavailable' || // We don't intend to lazy-load the rtl text plugin, so proceed with incorrect shaping
-                    bucketHasRTLText && rtlWorkerPlugin.isParsed() // Use the rtlText plugin to shape text
+                    !bucketHasRTLText ||
+                    rtlWorkerPlugin.getRTLTextPluginStatus() === 'unavailable' ||
+                    (bucketHasRTLText && rtlWorkerPlugin.isParsed())
                 ) {
-                    text = transformText(formattedText, layer, evaluationFeature);
+                    return transformText(formattedText, layer, evaluationFeature);
                 }
-            }
+                return undefined;
+            };
 
-            let icon: ResolvedImage;
+            const text = evaluateText('text-field', hasText);
+            const secondaryText = evaluateText('text-field2', hasSecondaryText);
+
+            let icon: ResolvedImage | undefined;
             if (hasIcon) {
-                // Expression evaluation will automatically coerce to Image
-                // but plain string token evaluation skips that pathway so do the
-                // conversion here.
                 const resolvedTokens = layer.getValueAndResolveTokens('icon-image', evaluationFeature, canonical, availableImages);
                 if (resolvedTokens instanceof ResolvedImage) {
                     icon = resolvedTokens;
@@ -563,59 +578,93 @@ export class SymbolBucket implements Bucket {
                 }
             }
 
-            if (!text && !icon) {
+            if (!text && !icon && !secondaryText) {
                 continue;
             }
+
             const sortKey = this.sortFeaturesByKey ?
                 symbolSortKey.evaluate(evaluationFeature, {}, canonical) :
                 undefined;
 
-            const symbolFeature: SymbolFeature = {
-                id,
-                text,
-                icon,
-                index,
-                sourceLayerIndex,
-                geometry: evaluationFeature.geometry,
-                properties: feature.properties,
-                type: VectorTileFeature.types[feature.type],
-                sortKey
-            };
-            this.features.push(symbolFeature);
+            const shouldAddPrimary = !!text || !!icon;
+            if (shouldAddPrimary) {
+                const primaryFeature: SymbolFeature = {
+                    id,
+                    text,
+                    icon,
+                    index,
+                    sourceLayerIndex,
+                    geometry: evaluationFeature.geometry,
+                    properties: feature.properties,
+                    type: VectorTileFeature.types[feature.type],
+                    sortKey,
+                    isTextField2: false
+                };
+                this.features.push(primaryFeature);
+            }
+
+            if (secondaryText) {
+                const secondaryFeature: SymbolFeature = {
+                    id,
+                    text: secondaryText,
+                    icon: undefined,
+                    index,
+                    sourceLayerIndex,
+                    geometry: evaluationFeature.geometry,
+                    properties: feature.properties,
+                    type: VectorTileFeature.types[feature.type],
+                    sortKey,
+                    isTextField2: true
+                };
+                this.features.push(secondaryFeature);
+            }
 
             if (icon) {
                 icons[icon.name] = true;
             }
 
-            if (text) {
+            const registerTextDependencies = (formattedLabel: Formatted) => {
                 const fontStack = textFont.evaluate(evaluationFeature, {}, canonical).join(',');
                 const textAlongLine = layout.get('text-rotation-alignment') !== 'viewport' && layout.get('symbol-placement') !== 'point';
                 this.allowVerticalPlacement = this.writingModes && this.writingModes.indexOf(WritingMode.vertical) >= 0;
-                for (const section of text.sections) {
+                const doesAllowVerticalWritingMode = allowsVerticalWritingMode(formattedLabel.toString());
+                for (const section of formattedLabel.sections) {
                     if (!section.image) {
-                        const doesAllowVerticalWritingMode = allowsVerticalWritingMode(text.toString());
                         const sectionFont = section.fontStack || fontStack;
                         const sectionStack = stacks[sectionFont] = stacks[sectionFont] || {};
                         this.calculateGlyphDependencies(section.text, sectionStack, textAlongLine, this.allowVerticalPlacement, doesAllowVerticalWritingMode);
                     } else {
-                        // Add section image to the list of dependencies.
                         icons[section.image.name] = true;
                     }
                 }
+            };
+
+            if (text) {
+                registerTextDependencies(text);
+            }
+            if (secondaryText) {
+                registerTextDependencies(secondaryText);
             }
         }
 
         if (layout.get('symbol-placement') === 'line') {
             // Merge adjacent lines with the same text to improve labelling.
             // It's better to place labels on one long line than on many short segments.
-            //TODO: bug (wrong merging of branching lines)
+            // NOTE: bug (wrong merging of branching lines)
             //this.features = mergeLines(this.features);
         }
 
         if (this.sortFeaturesByKey) {
             this.features.sort((a, b) => {
                 // a.sortKey is always a number when sortFeaturesByKey is true
-                return (a.sortKey as number) - (b.sortKey as number);
+                const diff = (a.sortKey as number) - (b.sortKey as number);
+                if (diff !== 0) {
+                    return diff;
+                }
+                if (!!a.isTextField2 !== !!b.isTextField2) {
+                    return a.isTextField2 ? 1 : -1;
+                }
+                return 0;
             });
         }
     }
@@ -943,8 +992,23 @@ export class SymbolBucket implements Bucket {
         }
 
         result.sort((aIndex, bIndex) => {
-            return (rotatedYs[aIndex] - rotatedYs[bIndex]) ||
-                   (featureIndexes[bIndex] - featureIndexes[aIndex]);
+            const yDiff = rotatedYs[aIndex] - rotatedYs[bIndex];
+            if (yDiff !== 0) {
+                return yDiff;
+            }
+
+            const featureDiff = featureIndexes[bIndex] - featureIndexes[aIndex];
+            if (featureDiff !== 0) {
+                return featureDiff;
+            }
+
+            const aSecondary = this.symbolInstanceIsTextField2[aIndex] ? 1 : 0;
+            const bSecondary = this.symbolInstanceIsTextField2[bIndex] ? 1 : 0;
+            if (aSecondary !== bSecondary) {
+                return aSecondary - bSecondary;
+            }
+
+            return aIndex - bIndex;
         });
 
         return result;

@@ -5,11 +5,11 @@ import {type EvaluationParameters} from '../../../src/style/evaluation_parameter
 import {type BucketParameters} from '../../../src/data/bucket';
 import {type CollisionBoxArray} from '../../../src/data/array_types.g';
 
-export function createSymbolBucket(layerId: string, font: string, text: string,  collisionBoxArray: CollisionBoxArray) {
+export function createSymbolBucket(layerId: string, font: string, text: string,  collisionBoxArray: CollisionBoxArray, layoutOverrides?: Record<string, any>) {
     const layer = new SymbolStyleLayer({
         id: layerId,
         type: 'symbol',
-        layout: {'text-font': [font], 'text-field': text},
+        layout: {'text-font': [font], 'text-field': text, ...layoutOverrides},
         filter: featureFilter(undefined)
     } as any as LayerSpecification, {});
     layer.recalculate({zoom: 0, zoomHistory: {}} as EvaluationParameters, undefined);

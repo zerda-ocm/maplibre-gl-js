@@ -764,6 +764,28 @@ export class Placement {
                 placeIcon = placeIcon && placeText;
             }
 
+            const isSecondary = bucket.symbolInstanceIsTextField2 ? bucket.symbolInstanceIsTextField2[symbolIndex] : false;
+            let secondarySuppressed = false;
+            if (isSecondary) {
+                const primaryIndex = bucket.symbolInstancePrimary ? bucket.symbolInstancePrimary[symbolIndex] : -1;
+                if (primaryIndex < 0) {
+                    secondarySuppressed = true;
+                } else {
+                    const primaryInstance = bucket.symbolInstances.get(primaryIndex);
+                    const primaryPlacement = this.placements[primaryInstance.crossTileID];
+                    if (!primaryPlacement || !primaryPlacement.text) {
+                        secondarySuppressed = true;
+                    }
+                }
+
+                if (secondarySuppressed) {
+                    placeText = false;
+                    placeIcon = false;
+                    delete this.variableOffsets[symbolInstance.crossTileID];
+                    delete this.placedOrientations[symbolInstance.crossTileID];
+                }
+            }
+
             const hasTextBox = placeText && placedGlyphBoxes.placeable;
             const hasIconBox = placeIcon && placedIconBoxes.placeable;
 
@@ -816,8 +838,8 @@ export class Placement {
             if (bucket.bucketInstanceId === 0) throw new Error('bucket.bucketInstanceId can\'t be 0');
 
             // Do not show text or icons that are occluded by the globe, even if overlap mode is 'always'!
-            const textVisible: boolean = (placeText || alwaysShowText) && !(placedGlyphBoxes?.occluded);
-            const iconVisible = (placeIcon || alwaysShowIcon) && !(placedIconBoxes?.occluded);
+            const textVisible: boolean = !secondarySuppressed && (placeText || alwaysShowText) && !(placedGlyphBoxes?.occluded);
+            const iconVisible = !secondarySuppressed && (placeIcon || alwaysShowIcon) && !(placedIconBoxes?.occluded);
             this.placements[symbolInstance.crossTileID] = new JointPlacement(textVisible, iconVisible, offscreen || bucket.justReloaded);
             seenCrossTileIDs[symbolInstance.crossTileID] = true;
         };

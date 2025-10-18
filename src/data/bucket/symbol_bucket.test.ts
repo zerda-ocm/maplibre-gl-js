@@ -211,6 +211,186 @@ describe('SymbolBucket', () => {
         expect(spy).toHaveBeenCalledTimes(1);
     });
 
+    test('SymbolBucket creates secondary text instances from text-field2', () => {
+        const secondaryCollisionArray = new CollisionBoxArray();
+        const bucketWithSecondary = createSymbolBucket('secondary', 'Test', 'hello', secondaryCollisionArray, {'text-field2': 'world'});
+        const secondaryOptions = createPopulateOptions([]);
+        bucketWithSecondary.populate(features, secondaryOptions, undefined as any);
+
+        expect(bucketWithSecondary.features.some(feature => feature.isTextField2)).toBeTruthy();
+
+        performSymbolLayout({
+            bucket: bucketWithSecondary,
+            glyphMap: stacks,
+            glyphPositions: {},
+            subdivisionGranularity: SubdivisionGranularitySetting.noSubdivision
+        } as any);
+
+        const baselineCollisionArray = new CollisionBoxArray();
+        const baselineBucket = createSymbolBucket('baseline', 'Test', 'hello', baselineCollisionArray);
+        const baselineOptions = createPopulateOptions([]);
+        baselineBucket.populate(features, baselineOptions, undefined as any);
+
+        performSymbolLayout({
+            bucket: baselineBucket,
+            glyphMap: stacks,
+            glyphPositions: {},
+            subdivisionGranularity: SubdivisionGranularitySetting.noSubdivision
+        } as any);
+
+        expect(bucketWithSecondary.symbolInstances.length).toBeGreaterThan(baselineBucket.symbolInstances.length);
+    });
+
+    test('text-field2 offset shifts secondary text collision boxes', () => {
+        const collisionArray = new CollisionBoxArray();
+        const bucket = createSymbolBucket('offset', 'Test', 'hello', collisionArray, {
+            'text-variable-anchor': ['top'],
+            'text-field2': 'world',
+            'text-field2-offset': [0, 2]
+        });
+        const options = createPopulateOptions([]);
+        bucket.populate(features, options, undefined as any);
+
+        performSymbolLayout({
+            bucket,
+            glyphMap: stacks,
+            glyphPositions: {},
+            subdivisionGranularity: SubdivisionGranularitySetting.noSubdivision
+        } as any);
+
+        const firstInstance = bucket.symbolInstances.get(0);
+        const secondInstance = bucket.symbolInstances.get(1);
+
+        expect(firstInstance.textAnchorOffsetStartIndex).not.toEqual(65535);
+        expect(secondInstance.textAnchorOffsetStartIndex).not.toEqual(65535);
+
+        const firstOffsets = [] as Array<{anchor: number; offset: [number, number]}>;
+        for (let i = firstInstance.textAnchorOffsetStartIndex; i < firstInstance.textAnchorOffsetEndIndex; i++) {
+            const entry = bucket.textAnchorOffsets.get(i);
+            firstOffsets.push({anchor: entry.textAnchor, offset: [entry.textOffset0, entry.textOffset1]});
+        }
+
+        const secondOffsets = [] as Array<{anchor: number; offset: [number, number]}>;
+        for (let i = secondInstance.textAnchorOffsetStartIndex; i < secondInstance.textAnchorOffsetEndIndex; i++) {
+            const entry = bucket.textAnchorOffsets.get(i);
+            secondOffsets.push({anchor: entry.textAnchor, offset: [entry.textOffset0, entry.textOffset1]});
+        }
+
+        expect(firstOffsets).toHaveLength(1);
+        expect(secondOffsets).toHaveLength(1);
+        expect(firstOffsets[0].anchor).toEqual(secondOffsets[0].anchor);
+        expect(firstOffsets[0].offset[0]).toEqual(secondOffsets[0].offset[0]);
+        expect(firstOffsets[0].offset[1]).not.toEqual(secondOffsets[0].offset[1]);
+    });
+
+    test('text-field2 does not render without primary text', () => {
+        const collisionArray = new CollisionBoxArray();
+        const bucket = createSymbolBucket('secondary-only', 'Test', '', collisionArray, {
+            'text-field2': 'secondary'
+        });
+        const options = createPopulateOptions([]);
+        bucket.populate(features, options, undefined as any);
+
+        performSymbolLayout({
+            bucket,
+            glyphMap: stacks,
+            glyphPositions: {},
+            subdivisionGranularity: SubdivisionGranularitySetting.noSubdivision
+        } as any);
+
+        const tileID = new OverscaledTileID(0, 0, 0, 0, 0);
+        const tile = new Tile(tileID, 512);
+        tile.latestFeatureIndex = new FeatureIndex(tileID);
+        tile.buckets = {['secondary-only']: bucket};
+        tile.collisionBoxArray = collisionArray;
+
+        const crossTileSymbolIndex = new CrossTileSymbolIndex();
+        crossTileSymbolIndex.addLayer(bucket.layers[0], [tile], undefined as any);
+
+        const placement = new Placement(transform, undefined as any, 0, true);
+        const parts: any[] = [];
+        placement.getBucketParts(parts, bucket.layers[0], tile, false);
+        for (const part of parts) {
+            placement.placeLayerBucketPart(part, {}, false);
+        }
+
+        const secondaryCrossTileIDs: number[] = [];
+        for (let i = 0; i < bucket.symbolInstances.length; i++) {
+            if (bucket.symbolInstanceIsTextField2[i]) {
+                const symbolInstance = bucket.symbolInstances.get(i);
+                secondaryCrossTileIDs.push(symbolInstance.crossTileID);
+            }
+        }
+
+        expect(secondaryCrossTileIDs).not.toHaveLength(0);
+        for (const id of secondaryCrossTileIDs) {
+            const placementResult = placement.placements[id];
+            expect(placementResult?.text).toBe(false);
+        }
+    });
+
+    test('text-field2 hidden when primary is occluded by collision', () => {
+        const collisionArray = new CollisionBoxArray();
+        const baseBucket = createSymbolBucket('base-layer', 'Test', 'base', collisionArray);
+        const secondaryBucket = createSymbolBucket('secondary-layer', 'Test', 'base', collisionArray, {
+            'text-field2': 'secondary',
+            'text-field2-offset': [0, 2]
+        });
+
+        const baseOptions = createPopulateOptions([]);
+        const secondaryOptions = createPopulateOptions([]);
+        baseBucket.populate(features, baseOptions, undefined as any);
+        secondaryBucket.populate(features, secondaryOptions, undefined as any);
+
+        performSymbolLayout({
+            bucket: baseBucket,
+            glyphMap: stacks,
+            glyphPositions: {},
+            subdivisionGranularity: SubdivisionGranularitySetting.noSubdivision
+        } as any);
+
+        performSymbolLayout({
+            bucket: secondaryBucket,
+            glyphMap: stacks,
+            glyphPositions: {},
+            subdivisionGranularity: SubdivisionGranularitySetting.noSubdivision
+        } as any);
+
+        const tileID = new OverscaledTileID(0, 0, 0, 0, 0);
+        const tile = new Tile(tileID, 512);
+        tile.latestFeatureIndex = new FeatureIndex(tileID);
+        tile.buckets = {
+            'base-layer': baseBucket,
+            'secondary-layer': secondaryBucket
+        } as any;
+        tile.collisionBoxArray = collisionArray;
+
+        const crossTileSymbolIndex = new CrossTileSymbolIndex();
+        crossTileSymbolIndex.addLayer(baseBucket.layers[0], [tile], undefined as any);
+        crossTileSymbolIndex.addLayer(secondaryBucket.layers[0], [tile], undefined as any);
+
+        const placement = new Placement(transform, undefined as any, 0, true);
+
+        let parts: any[] = [];
+        placement.getBucketParts(parts, baseBucket.layers[0], tile, false);
+        for (const part of parts) {
+            placement.placeLayerBucketPart(part, {}, false);
+        }
+
+        parts = [];
+        placement.getBucketParts(parts, secondaryBucket.layers[0], tile, false);
+        for (const part of parts) {
+            placement.placeLayerBucketPart(part, {}, false);
+        }
+
+        for (let i = 0; i < secondaryBucket.symbolInstances.length; i++) {
+            if (!secondaryBucket.symbolInstanceIsTextField2[i]) continue;
+            const symbolInstance = secondaryBucket.symbolInstances.get(i);
+            const placementResult = placement.placements[symbolInstance.crossTileID];
+            expect(placementResult?.text).toBe(false);
+        }
+    });
+
     test('SymbolBucket detects rtl text', () => {
         const rtlBucket = bucketSetup('مرحبا');
         const ltrBucket = bucketSetup('hello');

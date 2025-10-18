@@ -1,3 +1,5 @@
+import '../style_spec_extensions';
+
 import {StyleLayer} from '../style_layer';
 
 import {SymbolBucket, type SymbolFeature} from '../../data/bucket/symbol_bucket';
