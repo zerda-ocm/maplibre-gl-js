@@ -15,6 +15,7 @@ import type {ImagePosition} from '../render/image_atlas';
 import {IMAGE_PADDING} from '../render/image_atlas';
 import type {Rect, GlyphPosition} from '../render/glyph_atlas';
 import {type Formatted, type FormattedSection, type VerticalAlign} from '@maplibre/maplibre-gl-style-spec';
+import {TextRotationAlignmentOverrideValue, encodeTextRotationAlignment} from './text_rotation_alignment';
 
 enum WritingMode {
     none = 0,
@@ -38,6 +39,7 @@ export type PositionedGlyph = {
     sectionIndex: number;
     metrics: GlyphMetrics;
     rect: Rect | null;
+    textRotationAlignmentOverride: TextRotationAlignmentOverrideValue;
 };
 
 export type PositionedLine = {
@@ -95,19 +97,22 @@ class SectionOptions {
     imageName: string | null;
     // Common options
     verticalAlign: VerticalAlign;
+    textRotationAlignmentOverride: TextRotationAlignmentOverrideValue;
 
     constructor() {
         this.scale = 1.0;
         this.fontStack = '';
         this.imageName = null;
         this.verticalAlign = 'bottom';
+        this.textRotationAlignmentOverride = TextRotationAlignmentOverrideValue.Inherit;
     }
 
-    static forText(scale: number | null, fontStack: string, verticalAlign: VerticalAlign | null) {
+    static forText(scale: number | null, fontStack: string, verticalAlign: VerticalAlign | null, textRotationAlignmentOverride: TextRotationAlignmentOverrideValue) {
         const textOptions = new SectionOptions();
         textOptions.scale = scale || 1;
         textOptions.fontStack = fontStack;
         textOptions.verticalAlign = verticalAlign || 'bottom';
+        textOptions.textRotationAlignmentOverride = textRotationAlignmentOverride;
         return textOptions;
     }
 
@@ -220,7 +225,8 @@ class TaggedString {
 
     addTextSection(section: FormattedSection, defaultFontStack: string) {
         this.text += section.text;
-        this.sections.push(SectionOptions.forText(section.scale, section.fontStack || defaultFontStack, section.verticalAlign));
+        const textRotationAlignmentOverride = encodeTextRotationAlignment((section as any).textRotationAlignment);
+        this.sections.push(SectionOptions.forText(section.scale, section.fontStack || defaultFontStack, section.verticalAlign, textRotationAlignmentOverride));
         const index = this.sections.length - 1;
         for (let i = 0; i < section.text.length; ++i) {
             this.sectionIndex.push(index);
@@ -767,7 +773,8 @@ function shapeLines(shaping: Shaping,
                 fontStack: section.fontStack,
                 sectionIndex,
                 metrics,
-                rect
+                rect,
+                textRotationAlignmentOverride: section.textRotationAlignmentOverride
             });
 
             if (!vertical) {

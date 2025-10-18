@@ -9,6 +9,7 @@ import type {IReadonlyTransform} from '../geo/transform_interface';
 import type {SymbolBucket} from '../data/bucket/symbol_bucket';
 import type {
     GlyphOffsetArray,
+    GlyphRotationArray,
     SymbolLineVertexArray,
     SymbolDynamicLayoutArray,
     PlacedSymbol,
@@ -19,6 +20,7 @@ import {type UnwrappedTileID} from '../source/tile_id';
 import {type StructArray} from '../util/struct_array';
 import {tileCoordinatesToLocation} from '../geo/projection/mercator_utils';
 import {planetScaleAtLatitude} from '../geo/projection/globe_utils';
+import {shouldRotateGlyphToLine, TextRotationAlignmentOverrideValue} from './text_rotation_alignment';
 
 /**
  * The result of projecting a point to the screen, with some additional information about the projection.
@@ -292,6 +294,7 @@ export function updateLineLabels(bucket: SymbolBucket,
             flip: false,
             keepUpright,
             glyphOffsetArray: bucket.glyphOffsetArray,
+            glyphRotationArray: bucket.glyphRotationArray,
             dynamicLayoutVertexArray,
             aspectRatio,
             rotateToLine,
@@ -310,6 +313,7 @@ export function updateLineLabels(bucket: SymbolBucket,
                     flip: true, // flipped
                     keepUpright,
                     glyphOffsetArray: bucket.glyphOffsetArray,
+                    glyphRotationArray: bucket.glyphRotationArray,
                     dynamicLayoutVertexArray,
                     aspectRatio,
                     rotateToLine,
@@ -346,11 +350,12 @@ type FirstAndLastGlyphPlacement = {
 export function placeFirstAndLastGlyph(
     fontScale: number,
     glyphOffsetArray: GlyphOffsetArray,
+    glyphRotationArray: GlyphRotationArray,
     lineOffsetX: number,
     lineOffsetY: number,
     flip: boolean,
     symbol: PlacedSymbol,
-    rotateToLine: boolean,
+    defaultRotateToLine: boolean,
     projectionContext: SymbolProjectionContext,
     unwrappedTileID: UnwrappedTileID): FirstAndLastGlyphPlacement {
     const glyphEndIndex = symbol.glyphStartIndex + symbol.numGlyphs;
@@ -360,13 +365,17 @@ export function placeFirstAndLastGlyph(
     const firstGlyphOffset = glyphOffsetArray.getoffsetX(symbol.glyphStartIndex);
     const lastGlyphOffset = glyphOffsetArray.getoffsetX(glyphEndIndex - 1);
 
+    const firstOverride = glyphRotationArray.getoverride(symbol.glyphStartIndex) as TextRotationAlignmentOverrideValue;
+    const rotateFirstGlyphToLine = shouldRotateGlyphToLine(firstOverride, defaultRotateToLine);
     const firstPlacedGlyph = placeGlyphAlongLine(fontScale * firstGlyphOffset, lineOffsetX, lineOffsetY, flip, symbol.segment,
-        lineStartIndex, lineEndIndex, projectionContext, rotateToLine, unwrappedTileID);
+        lineStartIndex, lineEndIndex, projectionContext, rotateFirstGlyphToLine, firstOverride, unwrappedTileID);
     if (!firstPlacedGlyph)
         return null;
 
+    const lastOverride = glyphRotationArray.getoverride(glyphEndIndex - 1) as TextRotationAlignmentOverrideValue;
+    const rotateLastGlyphToLine = shouldRotateGlyphToLine(lastOverride, defaultRotateToLine);
     const lastPlacedGlyph = placeGlyphAlongLine(fontScale * lastGlyphOffset, lineOffsetX, lineOffsetY, flip, symbol.segment,
-        lineStartIndex, lineEndIndex, projectionContext, rotateToLine, unwrappedTileID);
+        lineStartIndex, lineEndIndex, projectionContext, rotateLastGlyphToLine, lastOverride, unwrappedTileID);
     if (!lastPlacedGlyph)
         return null;
 
@@ -415,6 +424,7 @@ type GlyphLinePlacementArgs = {
     flip: boolean;
     keepUpright: boolean;
     glyphOffsetArray: GlyphOffsetArray;
+    glyphRotationArray: GlyphRotationArray;
     dynamicLayoutVertexArray: StructArray;
     aspectRatio: number;
     rotateToLine: boolean;
@@ -438,6 +448,7 @@ function placeGlyphsAlongLine(args: GlyphLinePlacementArgs): GlyphLinePlacementR
         flip,
         keepUpright,
         glyphOffsetArray,
+        glyphRotationArray,
         dynamicLayoutVertexArray,
         aspectRatio,
         rotateToLine,
@@ -447,6 +458,7 @@ function placeGlyphsAlongLine(args: GlyphLinePlacementArgs): GlyphLinePlacementR
     const fontScale = fontSize / 24;
     const lineOffsetX = symbol.lineOffsetX * fontScale;
     const lineOffsetY = symbol.lineOffsetY * fontScale;
+    const defaultRotateToLine = rotateToLine;
 
     let placedGlyphs;
     if (symbol.numGlyphs > 1) {
@@ -457,7 +469,7 @@ function placeGlyphsAlongLine(args: GlyphLinePlacementArgs): GlyphLinePlacementR
         // Place the first and the last glyph in the label first, so we can figure out
         // the overall orientation of the label and determine whether it needs to be flipped in keepUpright mode
         // Note: these glyphs are placed onto the label plane
-        const firstAndLastGlyph = placeFirstAndLastGlyph(fontScale, glyphOffsetArray, lineOffsetX, lineOffsetY, flip, symbol, rotateToLine, projectionContext, unwrappedTileID);
+        const firstAndLastGlyph = placeFirstAndLastGlyph(fontScale, glyphOffsetArray, glyphRotationArray, lineOffsetX, lineOffsetY, flip, symbol, defaultRotateToLine, projectionContext, unwrappedTileID);
         if (!firstAndLastGlyph) {
             return {notEnoughRoom: true};
         }
@@ -474,8 +486,10 @@ function placeGlyphsAlongLine(args: GlyphLinePlacementArgs): GlyphLinePlacementR
         //let rotateToLine2 = true;
         for (let glyphIndex = symbol.glyphStartIndex + 1; glyphIndex < glyphEndIndex - 1; glyphIndex++) {
             // Since first and last glyph fit on the line, try placing the rest of the glyphs.
+            const glyphOverride = glyphRotationArray.getoverride(glyphIndex) as TextRotationAlignmentOverrideValue;
+            const rotateGlyphToLine = shouldRotateGlyphToLine(glyphOverride, defaultRotateToLine);
             const placedGlyph = placeGlyphAlongLine(fontScale * glyphOffsetArray.getoffsetX(glyphIndex), lineOffsetX, lineOffsetY, flip, symbol.segment,
-                lineStartIndex, lineEndIndex, projectionContext, rotateToLine, unwrappedTileID);
+                lineStartIndex, lineEndIndex, projectionContext, rotateGlyphToLine, glyphOverride, unwrappedTileID);
             if (!placedGlyph) {
                 return {notEnoughRoom: true};
             }
@@ -505,8 +519,11 @@ function placeGlyphsAlongLine(args: GlyphLinePlacementArgs): GlyphLinePlacementR
                 return orientationChange;
             }
         }
+
+        const singleOverride = glyphRotationArray.getoverride(symbol.glyphStartIndex) as TextRotationAlignmentOverrideValue;
+        const rotateSingleGlyphToLine = shouldRotateGlyphToLine(singleOverride, defaultRotateToLine);
         const singleGlyph = placeGlyphAlongLine(fontScale * glyphOffsetArray.getoffsetX(symbol.glyphStartIndex), lineOffsetX, lineOffsetY, flip, symbol.segment,
-            symbol.lineStartIndex, symbol.lineStartIndex + symbol.lineLength, projectionContext, rotateToLine, unwrappedTileID);
+            symbol.lineStartIndex, symbol.lineStartIndex + symbol.lineLength, projectionContext, rotateSingleGlyphToLine, singleOverride, unwrappedTileID);
         if (!singleGlyph || projectionContext.projectionCache.anyProjectionOccluded)
             return {notEnoughRoom: true};
 
@@ -528,8 +545,7 @@ function placeGlyphsAlongLine(args: GlyphLinePlacementArgs): GlyphLinePlacementR
  * @param minimumLength - Distance in the projected space along the line for the returned point.
  * @param projectionContext - Projection context, used to get terrain's `getElevation`, and to project the points to screen pixels.
  */
-function projectTruncatedLineSegmentToLabelPlane(previousTilePoint: Point, currentTilePoint: Point, previousProjectedPoint: Point, minimumLength: number, projectionContext: SymbolProjectionContext) {
-    // We are assuming "previousTilePoint" won't project to a point within one unit of the camera plane
+function projectTruncatedLineSegmentToLabelPlane(previousTilePoint: Point, currentTilePoint: Point, previousProjectedPoint: Point, minimumLength: number, projectionContext: SymbolProjectionContext): Point {
     // If it did, that would mean our label extended all the way out from within the viewport to a (very distant)
     // point near the plane of the camera. We wouldn't be able to render the label anyway once it crossed the
     // plane of the camera.
@@ -797,6 +813,7 @@ export function placeGlyphAlongLine(
     lineEndIndex: number,
     projectionContext: SymbolProjectionContext,
     rotateToLine: boolean,
+    glyphOverride: TextRotationAlignmentOverrideValue,
     unwrappedTileID: UnwrappedTileID): PlacedGlyph | null {
 
     const combinedOffsetX = flip ?
@@ -910,9 +927,19 @@ export function placeGlyphAlongLine(
 
     pathVertices.push(p);
 
+    let glyphAngle: number;
+    if (rotateToLine) {
+        glyphAngle = segmentAngle;
+    } else if (glyphOverride === TextRotationAlignmentOverrideValue.ViewportGlyph) {
+        const transform = projectionContext.transform;
+        glyphAngle = angle + transform.bearingInRadians + transform.rollInRadians;
+    } else {
+        glyphAngle = 0.0;
+    }
+
     return {
         point: p,
-        angle: rotateToLine ? segmentAngle : 0.0,
+        angle: glyphAngle,
         path: pathVertices
     };
 }

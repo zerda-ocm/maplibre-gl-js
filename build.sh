@@ -6,5 +6,9 @@ sudo cp ./dist/maplibre-gl.css /var/www/html/
 sudo cp ./dist/maplibre-gl.js.map /var/www/html/
 sudo cp ./dist/maplibre-gl.js /var/www/html/
 sudo cp ./dist/maplibre-gl-dev.js /var/www/html/
-sudo cp ./dist/maplibre-gl-dev.js /var/www/html/
 sudo cp ./dist/maplibre-gl-dev.js.map /var/www/html/
+sudo cp ./dist/maplibre-gl.css /var/www/html/mapkin/
+sudo cp ./dist/maplibre-gl.js.map /var/www/html/mapkin/
+sudo cp ./dist/maplibre-gl.js /var/www/html/mapkin/
+sudo cp ./dist/maplibre-gl-dev.js /var/www/html/mapkin/
+sudo cp ./dist/maplibre-gl-dev.js.map /var/www/html/mapkin/

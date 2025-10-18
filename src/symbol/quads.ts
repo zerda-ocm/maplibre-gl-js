@@ -11,6 +11,7 @@ import type {Feature} from '@maplibre/maplibre-gl-style-spec';
 import type {StyleImage} from '../style/style_image';
 import ONE_EM from './one_em';
 import {type Rect} from '../render/glyph_atlas';
+import {TextRotationAlignmentOverrideValue} from './text_rotation_alignment';
 
 /**
  * A textured quad for rendering a single icon or glyph.
@@ -42,6 +43,7 @@ export type SymbolQuad = {
     isSDF: boolean;
     minFontScaleX: number;
     minFontScaleY: number;
+    textRotationAlignmentOverride: TextRotationAlignmentOverrideValue;
 };
 
 // If you have a 10px icon that isn't perfectly aligned to the pixel grid it will cover 11 actual
@@ -163,7 +165,22 @@ export function getIconQuads(
         const minFontScaleY = fixedContentHeight / pixelRatio / iconHeight;
 
         // Icon quad is padded, so texture coordinates also need to be padded.
-        return {tl, tr, bl, br, tex: subRect, writingMode: undefined, glyphOffset: [0, 0], sectionIndex: 0, pixelOffsetTL, pixelOffsetBR, minFontScaleX, minFontScaleY, isSDF: isSDFIcon};
+        return {
+            tl,
+            tr,
+            bl,
+            br,
+            tex: subRect,
+            writingMode: undefined,
+            glyphOffset: [0, 0],
+            sectionIndex: 0,
+            pixelOffsetTL,
+            pixelOffsetBR,
+            minFontScaleX,
+            minFontScaleY,
+            isSDF: isSDFIcon,
+            textRotationAlignmentOverride: TextRotationAlignmentOverrideValue.Inherit
+        };
     };
 
     if (!hasIconTextFit || (!image.stretchX && !image.stretchY)) {
@@ -341,7 +358,7 @@ export function getGlyphQuads(
             const pixelOffsetBR = new Point(0, 0);
             const minFontScaleX = 0;
             const minFontScaleY = 0;
-            quads.push({tl, tr, bl, br, tex: textureRect, writingMode: shaping.writingMode, glyphOffset, sectionIndex: positionedGlyph.sectionIndex, isSDF, pixelOffsetTL, pixelOffsetBR, minFontScaleX, minFontScaleY});
+            quads.push({tl, tr, bl, br, tex: textureRect, writingMode: shaping.writingMode, glyphOffset, sectionIndex: positionedGlyph.sectionIndex, isSDF, pixelOffsetTL, pixelOffsetBR, minFontScaleX, minFontScaleY, textRotationAlignmentOverride: positionedGlyph.textRotationAlignmentOverride});
         }
     }
 

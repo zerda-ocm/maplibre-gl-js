@@ -8,6 +8,7 @@ import {
     array
 } from '@maplibre/maplibre-gl-style-spec/src/expression/types.js';
 import {valueToString, typeOf} from '@maplibre/maplibre-gl-style-spec/src/expression/values.js';
+import {isValidTextRotationAlignment} from '../symbol/text_rotation_alignment';
 
 const layoutSymbol = styleSpec['layout_symbol'] as Record<string, any>;
 const paintSymbol = styleSpec['paint_symbol'] as Record<string, any>;
@@ -65,6 +66,7 @@ type ExtendedFormattedSectionExpression = {
     textHaloWidth: any;
     textHaloBlur: any;
     verticalAlign: any;
+    textRotationAlignment: any;
 };
 
 const FormatExpressionClass = FormatExpression as any;
@@ -133,6 +135,16 @@ FormatExpressionClass.parse = function(args: ReadonlyArray<unknown>, context: an
                 if (!verticalAlign) return null;
             }
 
+            let textRotationAlignment = null;
+            if (arg['text-rotation-alignment'] !== undefined) {
+                if (typeof arg['text-rotation-alignment'] === 'string' && !isValidTextRotationAlignment(arg['text-rotation-alignment'])) {
+                    return context.error(`'text-rotation-alignment' must be one of: 'map', 'viewport', 'viewport-glyph', 'auto' but found '${arg['text-rotation-alignment']}' instead.`) as null;
+                }
+
+                textRotationAlignment = context.parse(arg['text-rotation-alignment'], 1, StringType);
+                if (!textRotationAlignment) return null;
+            }
+
             const lastExpression = sections[sections.length - 1];
             lastExpression.scale = scale;
             lastExpression.font = font;
@@ -141,6 +153,7 @@ FormatExpressionClass.parse = function(args: ReadonlyArray<unknown>, context: an
             lastExpression.textHaloWidth = textHaloWidth;
             lastExpression.textHaloBlur = textHaloBlur;
             lastExpression.verticalAlign = verticalAlign;
+            lastExpression.textRotationAlignment = textRotationAlignment;
         } else {
             const content = context.parse(args[i], 1, ValueType);
             if (!content) return null;
@@ -159,7 +172,8 @@ FormatExpressionClass.parse = function(args: ReadonlyArray<unknown>, context: an
                 textHaloColor: null,
                 textHaloWidth: null,
                 textHaloBlur: null,
-                verticalAlign: null
+                verticalAlign: null,
+                textRotationAlignment: null
             });
         }
     }
@@ -196,6 +210,7 @@ FormatExpressionClass.prototype.evaluate = function(ctx: any) {
         (formattedSection as any).textHaloColor = section.textHaloColor ? section.textHaloColor.evaluate(ctx) : null;
         (formattedSection as any).textHaloWidth = section.textHaloWidth ? section.textHaloWidth.evaluate(ctx) : null;
         (formattedSection as any).textHaloBlur = section.textHaloBlur ? section.textHaloBlur.evaluate(ctx) : null;
+        (formattedSection as any).textRotationAlignment = section.textRotationAlignment ? section.textRotationAlignment.evaluate(ctx) : null;
         return formattedSection;
     };
 
@@ -225,6 +240,9 @@ FormatExpressionClass.prototype.eachChild = function(fn: (_: any) => void) {
         }
         if (section.verticalAlign) {
             fn(section.verticalAlign);
+        }
+        if (section.textRotationAlignment) {
+            fn(section.textRotationAlignment);
         }
     }
 };
