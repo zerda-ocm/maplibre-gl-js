@@ -442,7 +442,7 @@ export class GlobeTransform implements ITransform {
         if (this._globeness > 0 && this._globeness < 1) {
             const mercatorCoord = this._mercatorTransform.screenPointToMercatorCoordinate(p, terrain);
             const verticalCoord = this._verticalPerspectiveTransform.screenPointToMercatorCoordinate(p, terrain);
-            
+
             return new MercatorCoordinate(
                 lerp(mercatorCoord.x, verticalCoord.x, this._globeness),
                 lerp(mercatorCoord.y, verticalCoord.y, this._globeness),
