@@ -6,6 +6,33 @@
 ### 🐞 Bug fixes
 - _...Add new stuff here..._
 
+## 5.10.0
+
+### ✨ Features and improvements
+- Add time control API (`setNow`, `restoreNow`, `isTimeFrozen`) for deterministic rendering, enabling frame-by-frame video export and deterministic testing ([6544](https://github.com/maplibre/maplibre-gl-js/pull/6544))
+- Use styles `isHidden` logic in the worker by adding a new optional `roundMinZoom` parameter ([#6547](https://github.com/maplibre/maplibre-gl-js/pull/6547))
+- Add `transformConstrain` callback to the `Map` options to override the transform's `constrain` with new type `TransformConstrainFunction`; refactor transform constructor options to a `TransformOptions` object ([#6484](https://github.com/maplibre/maplibre-gl-js/issues/6484))
+- Use timeControl.now() instead of browser.now() ([6573](https://github.com/maplibre/maplibre-gl-js/pull/6573))
+
+### 🐞 Bug fixes
+- Contextmenu events not blocked by scrolling ([#5683](https://github.com/maplibre/maplibre-gl-js/issues/5683)
+- Mousemove events are not blocked by scrolling ([#6302](https://github.com/maplibre/maplibre-gl-js/issues/6302))
+- Dashed lines have blurry rounded caps ([#6554](https://github.com/maplibre/maplibre-gl-js/pull/6554))
+- Preserve flyTo padding when prefers-reduced-motion is enabled ([#6576](https://github.com/maplibre/maplibre-gl-js/issues/6576))
+- Fix setClusterOptions not triggering recluster when no data changes are pending ([#6603](https://github.com/maplibre/maplibre-gl-js/pull/6603))
+
+## 5.9.0
+
+### ✨ Features and improvements
+
+- Improve fading - dynamic bi-directional raster cross-fading and self fading ([#6469](https://github.com/maplibre/maplibre-gl-js/pull/6469))
+- Support for usage of line-gradient together with line-dasharray ([#6487](https://github.com/maplibre/maplibre-gl-js/pull/6487))
+
+### 🐞 Bug fixes
+
+- Added `button` role to marker div to fix accessibility issues with the `aria-label` ([#6435](https://github.com/maplibre/maplibre-gl-js/issues/6435))
+- Fix a crash on iOS when there are too many symbols to render ([#6526](https://github.com/maplibre/maplibre-gl-js/issues/6526))
+
 ## 5.8.0
 
 ### ✨ Features and improvements
@@ -16,7 +43,7 @@
 
 ### 🐞 Bug fixes
 
-- Fix raster flickering when using terrain 3D and optimize terrain logic.
+- Fix raster flickering when using terrain 3D and optimize terrain logic. ([#6446](https://github.com/maplibre/maplibre-gl-js/pull/6446))
 - Fix issue where parent tiles are retained when deeper descendant tiles already cover the missing ideal tile. ([#6442](https://github.com/maplibre/maplibre-gl-js/pull/6442))
 - Fix an issue when GeolocateControl fires outofmaxbounds event with trackUserLocation disabled ([#6464](https://github.com/maplibre/maplibre-gl-js/pull/6464))
 - Fix an issue with globe+terrain "zooming" in when dragging towards the poles ([#6470](https://github.com/maplibre/maplibre-gl-js/pull/6470))
