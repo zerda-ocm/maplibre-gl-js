@@ -43,7 +43,14 @@ export const plugins = (production: boolean): Plugin[] => [
         sourceMap: true
     }),
     nodeResolve,
-    typescript(),
+    // Ensure the TypeScript compiler outDir is inside the Rollup output directory
+    // to satisfy @rollup/plugin-typescript path validation. The Rollup builds
+    // emit into `staging/...`, so use `staging` as the outDir here.
+    typescript({
+        compilerOptions: {
+            outDir: 'staging/maplibregl'
+        }
+    }),
     commonjs({
         // global keyword handling causes Webpack compatibility issues, so we disabled it:
         // https://github.com/mapbox/mapbox-gl-js/pull/6956
