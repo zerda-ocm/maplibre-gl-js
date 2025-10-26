@@ -57,8 +57,7 @@ import type {SizeData} from '../../symbol/symbol_size';
 import type {FeatureStates} from '../../source/source_state';
 import type {ImagePosition} from '../../render/image_atlas';
 import type {VectorTileLayer} from '@mapbox/vector-tile';
-import {Color} from '@maplibre/maplibre-gl-style-spec';
-import {namedColors} from '@maplibre/maplibre-gl-style-spec/src/expression/types/parse_css_color';
+import {applyColorSplit, defaultSplitChars} from './color_split';
 
 export type SingleCollisionBox = {
     x1: number;
@@ -504,134 +503,7 @@ export class SymbolBucket implements Bucket {
         const stacks = options.glyphDependencies;
         const availableImages = options.availableImages;
         const globalProperties = new EvaluationParameters(this.zoom);
-
-        function generateSplitChars(namedColors: Record<string, [number, number, number]>): Map<string, Color> {
-            const splitChars = new Map<string, Color>();
-            let charCode = 0xE001; // Start of the Unicode Private Use Area
-
-            for (const colorName in namedColors) {
-                const rgb = namedColors[colorName];
-                const color = new Color(rgb[0] / 255, rgb[1] / 255, rgb[2] / 255, 1);
-                splitChars.set(String.fromCodePoint(charCode), color);
-                charCode++;
-            }
-
-            return splitChars;
-        }
-
-        const splitChars = generateSplitChars(namedColors);
-
-        // Special markers for inline color hex values.
-        const RGB_MARKER = String.fromCodePoint(0xE100); // indicates following text contains an #rrggbb color
-        const RGBA_MARKER = String.fromCodePoint(0xE101); // indicates following text contains an #rrggbbaa color
-
-        function parseHexColor(hex: string): Color | undefined {
-            // Accepts #RRGGBB or #RRGGBBAA (case-insensitive)
-            if (!hex || hex[0] !== '#') return undefined;
-            const clean = hex.slice(1);
-            if (clean.length === 6) {
-                const r = parseInt(clean.slice(0, 2), 16);
-                const g = parseInt(clean.slice(2, 4), 16);
-                const b = parseInt(clean.slice(4, 6), 16);
-                if (Number.isNaN(r) || Number.isNaN(g) || Number.isNaN(b)) return undefined;
-                return new Color(r / 255, g / 255, b / 255, 1);
-            } else if (clean.length === 8) {
-                const r = parseInt(clean.slice(0, 2), 16);
-                const g = parseInt(clean.slice(2, 4), 16);
-                const b = parseInt(clean.slice(4, 6), 16);
-                const a = parseInt(clean.slice(6, 8), 16) / 255;
-                if (Number.isNaN(r) || Number.isNaN(g) || Number.isNaN(b) || Number.isNaN(a)) return undefined;
-                return new Color(r / 255, g / 255, b / 255, a);
-            }
-            return undefined;
-        }
-
-        const applyColorSplit = (formattedText: Formatted | void): Formatted | void => {
-            if (!formattedText) return formattedText;
-
-            const updatedSections = [];
-            for (const originalSection of formattedText.sections) {
-                const sectionText = originalSection.text;
-
-                let lastIndex = 0;
-                let currentColor: Color | undefined = originalSection.textColor;
-
-                let i = 0;
-                while (i < sectionText.length) {
-                    const ch = sectionText[i];
-
-                    // Named color markers (single private-use character mapped in splitChars)
-                    if (splitChars.has(ch)) {
-                        // include the marker in the previous substring (keeps behavior compatible with existing markers)
-                        const end = i + 1;
-                        if (lastIndex < end) {
-                            updatedSections.push({
-                                ...originalSection,
-                                text: sectionText.substring(lastIndex, end),
-                                textColor: currentColor
-                            });
-                        }
-                        // update the color for subsequent text using the marker we just consumed
-                        currentColor = splitChars.get(ch) as Color;
-                        lastIndex = end;
-                        i = lastIndex;
-                        continue;
-                    }
-
-                    // Hex color markers: consume marker + hex sequence and set color for subsequent text
-                    if (ch === RGB_MARKER || ch === RGBA_MARKER) {
-                        const remaining = sectionText.slice(i + 1);
-                        // For RGB_MARKER only accept 6-digit hex (#rrggbb).
-                        // For RGBA_MARKER accept 8-digit (#rrggbbaa) or 6-digit as fallback (prefer 8-digit).
-                        let match: RegExpMatchArray | null = null;
-                        if (ch === RGBA_MARKER) {
-                            // RGBA marker must be followed by an 8-digit hex (#rrggbbaa)
-                            match = remaining.match(/^#([0-9a-fA-F]{8})/);
-                        } else {
-                            // RGB marker must be followed by a 6-digit hex (#rrggbb)
-                            match = remaining.match(/^#([0-9a-fA-F]{6})/);
-                        }
-                        if (match) {
-                            // push any text before the marker
-                            if (lastIndex < i) {
-                                updatedSections.push({
-                                    ...originalSection,
-                                    text: sectionText.substring(lastIndex, i),
-                                    textColor: currentColor
-                                });
-                            }
-
-                            const hex = match[0];
-                            const parsed = parseHexColor(hex);
-                            if (parsed) {
-                                currentColor = parsed;
-                            }
-
-                            // advance past marker + hex
-                            const advance = 1 + hex.length; // marker char + '#....'
-                            i = i + advance;
-                            lastIndex = i;
-                            continue;
-                        }
-                        // If no valid hex followed, treat marker as normal char
-                    }
-
-                    i++;
-                }
-
-                // push remainder
-                if (lastIndex < sectionText.length) {
-                    updatedSections.push({
-                        ...originalSection,
-                        text: sectionText.substring(lastIndex),
-                        textColor: currentColor
-                    });
-                }
-            }
-
-            formattedText.sections = updatedSections;
-            return formattedText;
-        };
+        const splitChars = defaultSplitChars;
 
         for (const {feature, id, index, sourceLayerIndex} of features) {
 
@@ -648,7 +520,7 @@ export class SymbolBucket implements Bucket {
                     return undefined;
                 }
                 const resolvedTokens = layer.getValueAndResolveTokens(propertyName, evaluationFeature, canonical, availableImages);
-                const formattedText = applyColorSplit(Formatted.factory(resolvedTokens));
+                const formattedText = applyColorSplit(Formatted.factory(resolvedTokens), splitChars);
                 if (!formattedText || formattedText.isEmpty()) {
                     return undefined;
                 }
