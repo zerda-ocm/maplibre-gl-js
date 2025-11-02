@@ -17,7 +17,10 @@ import type {
 } from '../data/array_types.g';
 import type {OverlapMode} from '../style/style_layer/overlap_mode';
 import {type OverscaledTileID, type UnwrappedTileID} from '../source/tile_id';
-import {type PointProjection, type SymbolProjectionContext, getTileSkewVectors, pathSlicedToLongestUnoccluded, placeFirstAndLastGlyph, projectPathSpecialProjection, xyTransformMat4} from '../symbol/projection';
+import {type PointProjection, type SymbolProjectionContext, getTileSkewVectors, pathSlicedToLongestUnoccluded, placeFirstAndLastGlyph, placeGlyphAlongLine, projectPathSpecialProjection, xyTransformMat4} from '../symbol/projection';
+import type {TextRotationAlignmentOverrideValue} from './text_rotation_alignment';
+import {shouldRotateGlyphToLine} from './text_rotation_alignment';
+import {WritingMode} from './shaping';
 import {clamp, getAABB} from '../util/util';
 import {Bounds} from '../geo/bounds';
 
@@ -200,6 +203,8 @@ export class CollisionIndex {
         pitchedLabelPlaneMatrix: mat4,
         showCollisionCircles: boolean,
         pitchWithMap: boolean,
+        rotateToLine: boolean,
+        keepUpright: boolean,
         collisionGroupPredicate: (key: FeatureKey) => boolean,
         circlePixelDiameter: number,
         textPixelPadding: number,
@@ -240,15 +245,66 @@ export class CollisionIndex {
             lineOffsetY,
             /*flip*/ false,
             symbol,
-            false,
+            rotateToLine,
             projectionContext,
             unwrappedTileID);
 
         let collisionDetected = false;
         let inGrid = false;
         let entirelyOffscreen = true;
+        const aspectRatio = this.transform.width / this.transform.height;
+        const pitchedLabelPlaneMatrixInverse = pitchWithMap ? mat4.invert(mat4.create(), pitchedLabelPlaneMatrix) : null;
+
+        const projectLabelPointToClip = (point: Point) => {
+            if (pitchWithMap) {
+                if (!pitchedLabelPlaneMatrixInverse) {
+                    return new Point(0, 0);
+                }
+                const pos = vec4.fromValues(point.x, point.y, 0, 1);
+                vec4.transformMat4(pos, pos, pitchedLabelPlaneMatrixInverse);
+                const projected = this.transform.projectTileCoordinates(pos[0] / pos[3], pos[1] / pos[3], unwrappedTileID, getElevation);
+                return projected.point;
+            }
+
+            return new Point(
+                (point.x / this.transform.width) * 2.0 - 1.0,
+                1.0 - (point.y / this.transform.height) * 2.0
+            );
+        };
+
+        let glyphFlip = false;
+        let canPlaceGlyphCircles = true;
+
+        const updateCoverage = (centerX: number, centerY: number, radiusValue: number) => {
+            const x1 = centerX - radiusValue;
+            const y1 = centerY - radiusValue;
+            const x2 = centerX + radiusValue;
+            const y2 = centerY + radiusValue;
+            entirelyOffscreen = entirelyOffscreen && this.isOffscreen(x1, y1, x2, y2);
+            inGrid = inGrid || this.isInsideGrid(x1, y1, x2, y2);
+        };
 
         if (firstAndLastGlyph) {
+            if (keepUpright) {
+                const firstClip = projectLabelPointToClip(firstAndLastGlyph.first.point);
+                const lastClip = projectLabelPointToClip(firstAndLastGlyph.last.point);
+
+                if (symbol.writingMode === WritingMode.horizontal) {
+                    const rise = Math.abs(lastClip.y - firstClip.y);
+                    const run = Math.abs(lastClip.x - firstClip.x) * aspectRatio;
+                    if (rise > run) {
+                        canPlaceGlyphCircles = false;
+                    }
+                }
+
+                if (canPlaceGlyphCircles) {
+                    const needsFlip = symbol.writingMode === WritingMode.vertical ?
+                        firstClip.y < lastClip.y :
+                        firstClip.x > lastClip.x;
+                    glyphFlip = needsFlip;
+                }
+            }
+
             const zoomFraction = this.transform.zoom - Math.floor(this.transform.zoom);
             const circlePixelDiameterMultiplier = 1 / Math.pow(2, -zoomFraction);
             const radius = circlePixelDiameterMultiplier * circlePixelDiameter * 0.25 * perspectiveRatio + textPixelPadding;
@@ -332,20 +388,14 @@ export class CollisionIndex {
                     const centerX = circlePosition.x + viewportPadding;
                     const centerY = circlePosition.y + viewportPadding;
 
-                    placedCollisionCircles.push(centerX, centerY, radius, 0);
+                    updateCoverage(centerX, centerY, radius);
 
-                    const x1 = centerX - radius;
-                    const y1 = centerY - radius;
-                    const x2 = centerX + radius;
-                    const y2 = centerY + radius;
-
-                    entirelyOffscreen = entirelyOffscreen && this.isOffscreen(x1, y1, x2, y2);
-                    inGrid = inGrid || this.isInsideGrid(x1, y1, x2, y2);
-
+                    let collided = false;
                     if (overlapMode !== 'always' && this.grid.hitTestCircle(centerX, centerY, radius, overlapMode, collisionGroupPredicate)) {
                         // Don't early exit if we're showing the debug circles because we still want to calculate
                         // which circles are in use
                         collisionDetected = true;
+                        collided = true;
                         if (!showCollisionCircles) {
                             return {
                                 circles: [],
@@ -354,6 +404,63 @@ export class CollisionIndex {
                             };
                         }
                     }
+
+                    placedCollisionCircles.push(centerX, centerY, radius, collided ? 1 : 0);
+                }
+            }
+
+            if (symbol.numGlyphs > 0 && symbol.lineLength > 0 && canPlaceGlyphCircles) {
+                const glyphStartIndex = symbol.glyphStartIndex;
+                const glyphEndIndex = glyphStartIndex + symbol.numGlyphs;
+                const lineStartIndex = symbol.lineStartIndex;
+                const lineEndIndex = lineStartIndex + symbol.lineLength;
+                const glyphLabelPlanePoints: Array<Point> = [];
+
+                for (let glyphIndex = glyphStartIndex; glyphIndex < glyphEndIndex; glyphIndex++) {
+                    const glyphOffset = glyphOffsetArray.getoffsetX(glyphIndex);
+                    const glyphOverride = glyphRotationArray.getoverride(glyphIndex) as TextRotationAlignmentOverrideValue;
+                    const rotateGlyphToLine = shouldRotateGlyphToLine(glyphOverride, rotateToLine);
+                    const placedGlyph = placeGlyphAlongLine(
+                        labelPlaneFontScale * glyphOffset,
+                        lineOffsetX,
+                        lineOffsetY,
+                        glyphFlip,
+                        symbol.segment,
+                        lineStartIndex,
+                        lineEndIndex,
+                        projectionContext,
+                        rotateGlyphToLine,
+                        glyphOverride,
+                        unwrappedTileID
+                    );
+
+                    if (!placedGlyph) {
+                        continue;
+                    }
+
+                    glyphLabelPlanePoints.push(placedGlyph.point);
+                }
+
+                let glyphProjections: Array<PointProjection> | null = null;
+                if (pitchWithMap && glyphLabelPlanePoints.length > 0) {
+                    glyphProjections = projectPathSpecialProjection(glyphLabelPlanePoints, projectionContext);
+                }
+
+                for (let i = 0; i < glyphLabelPlanePoints.length; i++) {
+                    let glyphPoint = glyphLabelPlanePoints[i];
+                    if (pitchWithMap) {
+                        const projection = glyphProjections && glyphProjections[i];
+                        if (!projection || projection.isOccluded) {
+                            continue;
+                        }
+                        glyphPoint = projection.point;
+                    }
+
+                    const centerX = glyphPoint.x + viewportPadding;
+                    const centerY = glyphPoint.y + viewportPadding;
+
+                    updateCoverage(centerX, centerY, radius);
+                    placedCollisionCircles.push(centerX, centerY, radius, 2);
                 }
             }
         }

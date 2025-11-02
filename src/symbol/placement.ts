@@ -432,9 +432,11 @@ export class Placement {
         const iconOverlapMode = getOverlapMode(layout, 'icon-overlap', 'icon-allow-overlap');
         const iconAlwaysOverlap = iconOverlapMode === 'always';
         const rotateWithMap = layout.get('text-rotation-alignment') === 'map';
+        const rotateToLine = rotateWithMap;
         const pitchWithMap = layout.get('text-pitch-alignment') === 'map';
         const hasIconTextFit = layout.get('icon-text-fit') !== 'none';
         const zOrderByViewportY = layout.get('symbol-z-order') === 'viewport-y';
+        const keepUpright = layout.get('text-keep-upright');
 
         // This logic is similar to the "defaultOpacityState" logic below in updateBucketOpacities
         // If we know a symbol is always supposed to show, force it to be marked visible even if
@@ -701,6 +703,8 @@ export class Placement {
                     pitchedLabelPlaneMatrix,
                     showCollisionBoxes,
                     pitchWithMap,
+                    rotateToLine,
+                    keepUpright,
                     collisionGroup.predicate,
                     circlePixelDiameter,
                     textPixelPadding,
@@ -913,7 +917,7 @@ export class Placement {
                 circleArray.push(placedGlyphCircles.circles[i + 0] - viewportPadding); // x
                 circleArray.push(placedGlyphCircles.circles[i + 1] - viewportPadding); // y
                 circleArray.push(placedGlyphCircles.circles[i + 2]);                   // radius
-                circleArray.push(placedGlyphCircles.collisionDetected ? 1 : 0);        // collisionDetected-flag
+                circleArray.push(placedGlyphCircles.circles[i + 3]);                   // collision type flag
             }
         }
     }

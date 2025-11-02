@@ -10,7 +10,14 @@ void main() {
     float distance_to_edge = abs(distance_to_center - v_radius);
     float opacity_t = smoothstep(-stroke_radius, 0.0, -distance_to_edge);
 
-    vec4 color = mix(vec4(0.0, 0.0, 1.0, 0.5), vec4(1.0, 0.0, 0.0, 1.0), v_collision);
+    vec4 color;
+    if (v_collision > 1.5) {
+        color = vec4(0.0, 0.0, 0.0, 0.8);
+    } else if (v_collision > 0.5) {
+        color = vec4(1.0, 0.0, 0.0, 0.2);
+    } else {
+        color = vec4(0.0, 0.0, 1.0, 0.2);
+    }
 
     fragColor = color * alpha * opacity_t;
 }
