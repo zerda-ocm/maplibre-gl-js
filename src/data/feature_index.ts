@@ -18,6 +18,7 @@ import {polygonIntersectsBox} from '../util/intersection_tests';
 import {PossiblyEvaluated} from '../style/properties';
 import {FeatureIndexArray} from './array_types.g';
 import {type mat4} from 'gl-matrix';
+import type {SymbolQueryMatch} from '../symbol/collision_index';
 
 import type {StyleLayer} from '../style/style_layer';
 import type {FeatureFilter, FeatureState, FilterSpecification, PromoteIdSpecification} from '@maplibre/maplibre-gl-style-spec';
@@ -49,6 +50,10 @@ export type QueryResultsItem = {
     featureIndex: number;
     feature: GeoJSONFeature;
     intersectionZ?: boolean | number;
+    collisionCircleIndex?: number;
+    collisionCircleGlyphArrayIndex?: number;
+    collisionCircleCharCode?: number;
+    collisionCircleCharacter?: string;
 };
 
 /**
@@ -210,7 +215,8 @@ export class FeatureIndex {
             styleLayer: StyleLayer,
             featureState: any,
             id: string | number | void
-        ) => boolean | number) {
+        ) => boolean | number,
+        extraFeatureData?: SymbolQueryMatch) {
 
         const layerIDs = this.bucketLayerIDs[bucketIndex];
         if (filterLayerIDs && !layerIDs.some(id => filterLayerIDs.has(id)))
@@ -261,17 +267,40 @@ export class FeatureIndex {
 
             const geojsonFeature = new GeoJSONFeature(feature, this.z, this.x, this.y, id) as MapGeoJSONFeature;
             geojsonFeature.layer = serializedLayer;
+            const glyphCharCode = extraFeatureData?.glyphCharCode;
+            const glyphCharacter = glyphCharCode !== undefined ? String.fromCodePoint(glyphCharCode) : undefined;
+            if (extraFeatureData?.collisionCircleIndex !== undefined) {
+                geojsonFeature.collisionCircleIndex = extraFeatureData.collisionCircleIndex;
+            }
+            if (extraFeatureData?.glyphArrayIndex !== undefined) {
+                geojsonFeature.collisionCircleGlyphArrayIndex = extraFeatureData.glyphArrayIndex;
+            }
+            if (glyphCharCode !== undefined) {
+                geojsonFeature.collisionCircleCharCode = glyphCharCode;
+                geojsonFeature.collisionCircleCharacter = glyphCharacter;
+            }
             let layerResult = result[layerID];
             if (layerResult === undefined) {
                 layerResult = result[layerID] = [];
             }
-            layerResult.push({featureIndex, feature: geojsonFeature, intersectionZ});
+            const item: QueryResultsItem = {featureIndex, feature: geojsonFeature, intersectionZ};
+            if (extraFeatureData?.collisionCircleIndex !== undefined) {
+                item.collisionCircleIndex = extraFeatureData.collisionCircleIndex;
+            }
+            if (extraFeatureData?.glyphArrayIndex !== undefined) {
+                item.collisionCircleGlyphArrayIndex = extraFeatureData.glyphArrayIndex;
+            }
+            if (glyphCharCode !== undefined) {
+                item.collisionCircleCharCode = glyphCharCode;
+                item.collisionCircleCharacter = glyphCharacter;
+            }
+            layerResult.push(item);
         }
     }
 
     // Given a set of symbol indexes that have already been looked up,
     // return a matching set of GeoJSONFeatures
-    lookupSymbolFeatures(symbolFeatureIndexes: Array<number>,
+    lookupSymbolFeatures(symbolMatches: Array<SymbolQueryMatch>,
         serializedLayers: {[_: string]: StyleLayer},
         bucketIndex: number,
         sourceLayerIndex: number,
@@ -287,17 +316,21 @@ export class FeatureIndex {
 
         const filter = featureFilter(filterParams.filterSpec, filterParams.globalState);
 
-        for (const symbolFeatureIndex of symbolFeatureIndexes) {
+        for (const symbolMatch of symbolMatches) {
+            const extraFeatureData = (symbolMatch.collisionCircleIndex !== undefined || symbolMatch.glyphCharCode !== undefined) ? symbolMatch : undefined;
             this.loadMatchingFeature(
                 result,
                 bucketIndex,
                 sourceLayerIndex,
-                symbolFeatureIndex,
+                symbolMatch.featureIndex,
                 filter,
                 filterLayerIDs,
                 availableImages,
                 styleLayers,
-                serializedLayers
+                serializedLayers,
+                undefined,
+                undefined,
+                extraFeatureData
             );
 
         }

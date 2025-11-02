@@ -255,8 +255,9 @@ function mergeRenderedFeatureLayers(tiles: RenderedFeatureLayer[]): QueryResults
             const wrappedIDFeatures = wrappedIDLayers[layerID] = wrappedIDLayers[layerID] || {};
             const resultFeatures = result[layerID] = result[layerID] || [];
             for (const tileFeature of tileFeatures) {
-                if (!wrappedIDFeatures[tileFeature.featureIndex]) {
-                    wrappedIDFeatures[tileFeature.featureIndex] = true;
+                const dedupeKey = tileFeature.collisionCircleIndex !== undefined ? `${tileFeature.featureIndex}:${tileFeature.collisionCircleIndex}` : `${tileFeature.featureIndex}`;
+                if (!wrappedIDFeatures[dedupeKey]) {
+                    wrappedIDFeatures[dedupeKey] = true;
                     resultFeatures.push(tileFeature);
                 }
             }

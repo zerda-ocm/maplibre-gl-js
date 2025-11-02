@@ -14,6 +14,7 @@ import {SymbolLayoutArray,
     SymbolInstanceArray,
     GlyphOffsetArray,
     GlyphRotationArray,
+    GlyphCharacterArray,
     SymbolLineVertexArray,
     TextAnchorOffsetArray
 } from '../array_types.g';
@@ -23,7 +24,6 @@ import {SegmentVector} from '../segment';
 import {ProgramConfigurationSet} from '../program_configuration';
 import {TriangleIndexArray, LineIndexArray} from '../index_array_type';
 import {transformText} from '../../symbol/transform_text';
-import {mergeLines} from '../../symbol/merge_lines';
 import {allowsVerticalWritingMode, stringContainsRTLText} from '../../util/script_detection';
 import {WritingMode} from '../../symbol/shaping';
 import {loadGeometry} from '../load_geometry';
@@ -335,6 +335,7 @@ export class SymbolBucket implements Bucket {
 
     glyphOffsetArray: GlyphOffsetArray;
     glyphRotationArray: GlyphRotationArray;
+    glyphCharacterArray: GlyphCharacterArray;
     lineVertexArray: SymbolLineVertexArray;
     features: Array<SymbolFeature>;
     symbolInstances: SymbolInstanceArray;
@@ -443,6 +444,7 @@ export class SymbolBucket implements Bucket {
 
         this.glyphOffsetArray = new GlyphOffsetArray();
         this.glyphRotationArray = new GlyphRotationArray();
+        this.glyphCharacterArray = new GlyphCharacterArray();
         this.lineVertexArray = new SymbolLineVertexArray();
         this.symbolInstances = new SymbolInstanceArray();
         this.textAnchorOffsets = new TextAnchorOffsetArray();
@@ -737,7 +739,7 @@ export class SymbolBucket implements Bucket {
         const sections = feature.text && feature.text.sections;
 
         for (let i = 0; i < quads.length; i++) {
-            const {tl, tr, bl, br, tex, pixelOffsetTL, pixelOffsetBR, minFontScaleX, minFontScaleY, glyphOffset, isSDF, sectionIndex} = quads[i];
+            const {tl, tr, bl, br, tex, pixelOffsetTL, pixelOffsetBR, minFontScaleX, minFontScaleY, glyphOffset, isSDF, sectionIndex, glyphID} = quads[i];
             const index = segment.vertexLength;
 
             const y = glyphOffset[1];
@@ -755,6 +757,7 @@ export class SymbolBucket implements Bucket {
             segment.primitiveLength += 2;
 
             this.glyphOffsetArray.emplaceBack(glyphOffset[0]);
+            this.glyphCharacterArray.emplaceBack(glyphID ?? 0);
             this.glyphRotationArray.emplaceBack(quads[i].textRotationAlignmentOverride);
 
             if (i === quads.length - 1 || sectionIndex !== quads[i + 1].sectionIndex) {

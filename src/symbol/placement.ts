@@ -698,6 +698,7 @@ export class Placement {
                     bucket.lineVertexArray,
                     bucket.glyphOffsetArray,
                     bucket.glyphRotationArray,
+                    bucket.glyphCharacterArray,
                     fontSize,
                     unwrappedTileID,
                     pitchedLabelPlaneMatrix,
@@ -826,7 +827,7 @@ export class Placement {
             if (placedGlyphCircles) {
                 if (placeText) {
                     this.collisionIndex.insertCollisionCircles(
-                        placedGlyphCircles.circles,
+                        placedGlyphCircles,
                         textOverlapMode,
                         layout.get('text-ignore-placement'),
                         bucket.bucketInstanceId,

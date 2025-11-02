@@ -20,6 +20,10 @@ export type MapGeoJSONFeature = GeoJSONFeature & {
     source: string;
     sourceLayer?: string;
     state: { [key: string]: any };
+    collisionCircleIndex?: number;
+    collisionCircleGlyphArrayIndex?: number;
+    collisionCircleCharCode?: number;
+    collisionCircleCharacter?: string;
 };
 
 /**
