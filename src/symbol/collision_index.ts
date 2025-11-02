@@ -342,10 +342,7 @@ export class CollisionIndex {
                 }
             }
 
-            const zoomFraction = this.transform.zoom - Math.floor(this.transform.zoom);
-            const circlePixelDiameterMultiplier = 1 / Math.pow(2, -zoomFraction);
-            const radius = circlePixelDiameterMultiplier * circlePixelDiameter * 0.25 * perspectiveRatio + textPixelPadding;
-            //const radius = circlePixelDiameter * 0.5 * perspectiveRatio + textPixelPadding;
+            const radius = circlePixelDiameter * 0.25 * perspectiveRatio + textPixelPadding;
             const screenPlaneMin = new Point(-viewportPadding, -viewportPadding);
             const screenPlaneMax = new Point(this.screenRightBoundary, this.screenBottomBoundary);
             const interpolator = new PathInterpolator();
