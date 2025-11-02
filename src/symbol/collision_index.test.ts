@@ -24,6 +24,7 @@ describe('CollisionIndex', () => {
 
         const placedCircles = {
             circles: [viewportPadding + 16, viewportPadding + 16, 8, 2],
+            ellipseFlags: [0],
             offscreen: false,
             collisionDetected: false,
             glyphHits: [{circleIndex: 0, glyphArrayIndex: 3, glyphCharCode: 'w'.codePointAt(0)!, specialIndex: 0, widthMultiplier: 1}]

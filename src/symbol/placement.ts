@@ -914,11 +914,18 @@ export class Placement {
             if (circleArray === undefined)
                 circleArray = this.collisionCircleArrays[bucketInstanceId] = [];
 
-            for (let i = 0; i < placedGlyphCircles.circles.length; i += 4) {
+            const ellipseFlags = placedGlyphCircles.ellipseFlags || [];
+
+            for (let i = 0, circleIndex = 0; i < placedGlyphCircles.circles.length; i += 4, circleIndex++) {
+                const widthMultiplier = ellipseFlags[circleIndex] || 0;
+                const encodedWidth = widthMultiplier > 0 ? Math.round(widthMultiplier * 100) : 0;
+                const collisionFlag = Math.trunc(placedGlyphCircles.circles[i + 3]) & 0x3;
+                const packedFlags = (encodedWidth << 2) | collisionFlag; // Preserve collision state while piggybacking width scaling.
+
                 circleArray.push(placedGlyphCircles.circles[i + 0] - viewportPadding); // x
                 circleArray.push(placedGlyphCircles.circles[i + 1] - viewportPadding); // y
                 circleArray.push(placedGlyphCircles.circles[i + 2]);                   // radius
-                circleArray.push(placedGlyphCircles.circles[i + 3]);                   // collision type flag
+                circleArray.push(packedFlags);                                         // packed collision flag + width scale
             }
         }
     }

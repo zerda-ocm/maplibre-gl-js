@@ -52,6 +52,7 @@ type GlyphCircleHitMeta = {
 
 export type PlacedCircles = {
     circles: Array<number>;
+    ellipseFlags: Array<number>;
     offscreen: boolean;
     collisionDetected: boolean;
     glyphHits: Array<GlyphCircleHitMeta>;
@@ -244,6 +245,7 @@ export class CollisionIndex {
         getElevation: (x: number, y: number) => number
     ): PlacedCircles {
         const placedCollisionCircles = [];
+        const ellipseFlags: Array<number> = [];
         const glyphHits: Array<GlyphCircleHitMeta> = [];
 
         const tileUnitAnchorPoint = new Point(symbol.anchorX, symbol.anchorY);
@@ -434,6 +436,7 @@ export class CollisionIndex {
                         if (!showCollisionCircles) {
                             return {
                                 circles: [],
+                                ellipseFlags: [],
                                 offscreen: false,
                                 collisionDetected,
                                 glyphHits: []
@@ -442,6 +445,7 @@ export class CollisionIndex {
                     }
 
                     placedCollisionCircles.push(centerX, centerY, radius, collided ? 1 : 0);
+                    ellipseFlags.push(0);
                 }
             }
 
@@ -506,6 +510,7 @@ export class CollisionIndex {
 
                     updateCoverage(centerX, centerY, radius, widthMultiplier);
                     placedCollisionCircles.push(centerX, centerY, radius, 2);
+                    ellipseFlags.push(widthMultiplier !== 1 ? widthMultiplier : 0);
                     const circleIndex = placedCollisionCircles.length / 4 - 1;
                     glyphHits.push({circleIndex, glyphArrayIndex: glyphInfo.glyphIndex, glyphCharCode: glyphInfo.glyphCharCode, specialIndex: specialCircleIndex, widthMultiplier});
                     specialCircleIndex++;
@@ -513,8 +518,12 @@ export class CollisionIndex {
             }
         }
 
+        const circles = ((!showCollisionCircles && collisionDetected) || !inGrid || perspectiveRatio < this.perspectiveRatioCutoff)
+            ? []
+            : placedCollisionCircles;
         return {
-            circles: ((!showCollisionCircles && collisionDetected) || !inGrid || perspectiveRatio < this.perspectiveRatioCutoff) ? [] : placedCollisionCircles,
+            circles,
+            ellipseFlags: circles.length ? ellipseFlags : [],
             offscreen: entirelyOffscreen,
             collisionDetected,
             glyphHits

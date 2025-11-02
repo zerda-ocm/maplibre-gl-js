@@ -88,13 +88,17 @@ export function drawCollisionDebug(painter: Painter, sourceCache: SourceCache, l
             const x = batch.circleArray[circleIdx + 0];
             const y = batch.circleArray[circleIdx + 1];
             const radius = batch.circleArray[circleIdx + 2];
-            const collision = batch.circleArray[circleIdx + 3];
+            const packedFlags = batch.circleArray[circleIdx + 3];
+            // Lower two bits retain the collision flag; the remaining bits store the width multiplier scaled by 100.
+            const collision = packedFlags & 0x3;
+            const widthEncoded = packedFlags >> 2;
+            const vertexBase = widthEncoded * 4;
 
             // 4 floats per vertex, 4 vertices per quad
-            vertexData.emplace(vertexOffset++, x, y, radius, collision, 0);
-            vertexData.emplace(vertexOffset++, x, y, radius, collision, 1);
-            vertexData.emplace(vertexOffset++, x, y, radius, collision, 2);
-            vertexData.emplace(vertexOffset++, x, y, radius, collision, 3);
+            vertexData.emplace(vertexOffset++, x, y, radius, collision, vertexBase + 0);
+            vertexData.emplace(vertexOffset++, x, y, radius, collision, vertexBase + 1);
+            vertexData.emplace(vertexOffset++, x, y, radius, collision, vertexBase + 2);
+            vertexData.emplace(vertexOffset++, x, y, radius, collision, vertexBase + 3);
         }
     }
     if (!quadTriangles || quadTriangles.length < circleCount * 2) {
