@@ -54,6 +54,7 @@ export type QueryResultsItem = {
     collisionCircleGlyphArrayIndex?: number;
     collisionCircleCharCode?: number;
     collisionCircleCharacter?: string;
+    collisionCircleWidthMultiplier?: number;
 };
 
 /**
@@ -275,6 +276,9 @@ export class FeatureIndex {
             if (extraFeatureData?.glyphArrayIndex !== undefined) {
                 geojsonFeature.collisionCircleGlyphArrayIndex = extraFeatureData.glyphArrayIndex;
             }
+            if (extraFeatureData?.glyphWidthMultiplier !== undefined) {
+                geojsonFeature.collisionCircleWidthMultiplier = extraFeatureData.glyphWidthMultiplier;
+            }
             if (glyphCharCode !== undefined) {
                 geojsonFeature.collisionCircleCharCode = glyphCharCode;
                 geojsonFeature.collisionCircleCharacter = glyphCharacter;
@@ -289,6 +293,9 @@ export class FeatureIndex {
             }
             if (extraFeatureData?.glyphArrayIndex !== undefined) {
                 item.collisionCircleGlyphArrayIndex = extraFeatureData.glyphArrayIndex;
+            }
+            if (extraFeatureData?.glyphWidthMultiplier !== undefined) {
+                item.collisionCircleWidthMultiplier = extraFeatureData.glyphWidthMultiplier;
             }
             if (glyphCharCode !== undefined) {
                 item.collisionCircleCharCode = glyphCharCode;
@@ -317,7 +324,10 @@ export class FeatureIndex {
         const filter = featureFilter(filterParams.filterSpec, filterParams.globalState);
 
         for (const symbolMatch of symbolMatches) {
-            const extraFeatureData = (symbolMatch.collisionCircleIndex !== undefined || symbolMatch.glyphCharCode !== undefined) ? symbolMatch : undefined;
+            const extraFeatureData = (symbolMatch.collisionCircleIndex !== undefined ||
+                symbolMatch.glyphCharCode !== undefined ||
+                symbolMatch.glyphArrayIndex !== undefined ||
+                symbolMatch.glyphWidthMultiplier !== undefined) ? symbolMatch : undefined;
             this.loadMatchingFeature(
                 result,
                 bucketIndex,

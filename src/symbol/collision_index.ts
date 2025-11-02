@@ -33,13 +33,21 @@ import {Bounds} from '../geo/bounds';
 // stability, but it's expensive.
 export const viewportPadding = 100;
 
+const SPECIAL_GLYPH_WIDTHS = new Map<number, number>([
+    ['\ue137'.codePointAt(0)!, 2]
+]);
 const SPECIAL_GLYPH_CODES = new Set<number>(['w', 'n', 's', '\ue137'].map(ch => ch.codePointAt(0)!));
+
+const getGlyphWidthMultiplier = (glyphCode: number) => {
+    return SPECIAL_GLYPH_WIDTHS.get(glyphCode) ?? 1;
+};
 
 type GlyphCircleHitMeta = {
     circleIndex: number;
     glyphArrayIndex: number;
     glyphCharCode: number;
     specialIndex: number;
+    widthMultiplier: number;
 };
 
 export type PlacedCircles = {
@@ -64,6 +72,7 @@ export type FeatureKey = {
     collisionCircleIndex?: number;
     glyphArrayIndex?: number;
     glyphCharCode?: number;
+    glyphWidthMultiplier?: number;
 };
 
 export type SymbolQueryMatch = {
@@ -71,6 +80,7 @@ export type SymbolQueryMatch = {
     collisionCircleIndex?: number;
     glyphArrayIndex?: number;
     glyphCharCode?: number;
+    glyphWidthMultiplier?: number;
 };
 
 type ProjectedBox = {
@@ -298,11 +308,13 @@ export class CollisionIndex {
         let glyphFlip = false;
         let canPlaceGlyphCircles = true;
 
-        const updateCoverage = (centerX: number, centerY: number, radiusValue: number) => {
-            const x1 = centerX - radiusValue;
-            const y1 = centerY - radiusValue;
-            const x2 = centerX + radiusValue;
-            const y2 = centerY + radiusValue;
+        const updateCoverage = (centerX: number, centerY: number, radiusValue: number, widthMultiplier = 1) => {
+            const radiusX = radiusValue * widthMultiplier;
+            const radiusY = radiusValue;
+            const x1 = centerX - radiusX;
+            const y1 = centerY - radiusY;
+            const x2 = centerX + radiusX;
+            const y2 = centerY + radiusY;
             entirelyOffscreen = entirelyOffscreen && this.isOffscreen(x1, y1, x2, y2);
             inGrid = inGrid || this.isInsideGrid(x1, y1, x2, y2);
         };
@@ -479,6 +491,7 @@ export class CollisionIndex {
                 let specialCircleIndex = 0;
                 for (let i = 0; i < glyphLabelPlanePoints.length; i++) {
                     const glyphInfo = glyphLabelPlanePoints[i];
+                    const widthMultiplier = getGlyphWidthMultiplier(glyphInfo.glyphCharCode);
                     let glyphPoint = glyphInfo.point;
                     if (pitchWithMap) {
                         const projection = glyphProjections && glyphProjections[i];
@@ -491,10 +504,10 @@ export class CollisionIndex {
                     const centerX = glyphPoint.x + viewportPadding;
                     const centerY = glyphPoint.y + viewportPadding;
 
-                    updateCoverage(centerX, centerY, radius);
+                    updateCoverage(centerX, centerY, radius, widthMultiplier);
                     placedCollisionCircles.push(centerX, centerY, radius, 2);
                     const circleIndex = placedCollisionCircles.length / 4 - 1;
-                    glyphHits.push({circleIndex, glyphArrayIndex: glyphInfo.glyphIndex, glyphCharCode: glyphInfo.glyphCharCode, specialIndex: specialCircleIndex});
+                    glyphHits.push({circleIndex, glyphArrayIndex: glyphInfo.glyphIndex, glyphCharCode: glyphInfo.glyphCharCode, specialIndex: specialCircleIndex, widthMultiplier});
                     specialCircleIndex++;
                 }
             }
@@ -602,6 +615,9 @@ export class CollisionIndex {
                 if (featureKey.glyphCharCode !== undefined) {
                     entry.glyphCharCode = featureKey.glyphCharCode;
                 }
+                if (featureKey.glyphWidthMultiplier !== undefined) {
+                    entry.glyphWidthMultiplier = featureKey.glyphWidthMultiplier;
+                }
             }
             result[bucketId].push(entry);
         }
@@ -632,12 +648,22 @@ export class CollisionIndex {
         for (let k = 0, circleIndex = 0; k < circles.length; k += 4, circleIndex++) {
             const hit = glyphHitMap.get(circleIndex);
             const key: FeatureKey = {...baseKey};
+            const centerX = circles[k];
+            const centerY = circles[k + 1];
+            const radius = circles[k + 2];
             if (hit) {
                 key.collisionCircleIndex = hit.specialIndex;
                 key.glyphArrayIndex = hit.glyphArrayIndex;
                 key.glyphCharCode = hit.glyphCharCode;
+                const widthMultiplier = hit.widthMultiplier;
+                if (widthMultiplier !== 1) {
+                    key.glyphWidthMultiplier = widthMultiplier;
+                    const radiusX = radius * widthMultiplier;
+                    grid.insert(key, centerX - radiusX, centerY - radius, centerX + radiusX, centerY + radius);
+                    continue;
+                }
             }
-            grid.insertCircle(key, circles[k], circles[k + 1], circles[k + 2]);
+            grid.insertCircle(key, centerX, centerY, radius);
         }
     }
 

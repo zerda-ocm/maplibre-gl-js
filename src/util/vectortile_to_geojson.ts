@@ -24,6 +24,7 @@ export type MapGeoJSONFeature = GeoJSONFeature & {
     collisionCircleGlyphArrayIndex?: number;
     collisionCircleCharCode?: number;
     collisionCircleCharacter?: string;
+    collisionCircleWidthMultiplier?: number;
 };
 
 /**
