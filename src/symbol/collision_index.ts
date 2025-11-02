@@ -39,6 +39,7 @@ type GlyphCircleHitMeta = {
     circleIndex: number;
     glyphArrayIndex: number;
     glyphCharCode: number;
+    specialIndex: number;
 };
 
 export type PlacedCircles = {
@@ -475,6 +476,7 @@ export class CollisionIndex {
                     glyphProjections = projectPathSpecialProjection(glyphPoints, projectionContext);
                 }
 
+                let specialCircleIndex = 0;
                 for (let i = 0; i < glyphLabelPlanePoints.length; i++) {
                     const glyphInfo = glyphLabelPlanePoints[i];
                     let glyphPoint = glyphInfo.point;
@@ -492,7 +494,8 @@ export class CollisionIndex {
                     updateCoverage(centerX, centerY, radius);
                     placedCollisionCircles.push(centerX, centerY, radius, 2);
                     const circleIndex = placedCollisionCircles.length / 4 - 1;
-                    glyphHits.push({circleIndex, glyphArrayIndex: glyphInfo.glyphIndex, glyphCharCode: glyphInfo.glyphCharCode});
+                    glyphHits.push({circleIndex, glyphArrayIndex: glyphInfo.glyphIndex, glyphCharCode: glyphInfo.glyphCharCode, specialIndex: specialCircleIndex});
+                    specialCircleIndex++;
                 }
             }
         }
@@ -630,7 +633,7 @@ export class CollisionIndex {
             const hit = glyphHitMap.get(circleIndex);
             const key: FeatureKey = {...baseKey};
             if (hit) {
-                key.collisionCircleIndex = hit.circleIndex;
+                key.collisionCircleIndex = hit.specialIndex;
                 key.glyphArrayIndex = hit.glyphArrayIndex;
                 key.glyphCharCode = hit.glyphCharCode;
             }
