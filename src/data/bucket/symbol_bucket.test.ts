@@ -1,5 +1,6 @@
 import {describe, test, expect, vi, beforeAll} from 'vitest';
 import {SymbolBucket} from './symbol_bucket';
+import {RGB_MARKER, RGBA_MARKER, defaultSplitChars, parseHexColor} from './color_split';
 import {CollisionBoxArray} from '../../data/array_types.g';
 import {performSymbolLayout} from '../../symbol/symbol_layout';
 import {Placement} from '../../symbol/placement';
@@ -18,6 +19,7 @@ import {type StyleGlyph} from '../../style/style_glyph';
 import {SubdivisionGranularitySetting} from '../../render/subdivision_granularity_settings';
 import {MercatorTransform} from '../../geo/projection/mercator_transform';
 import {createPopulateOptions, loadVectorTile} from '../../../test/unit/lib/tile';
+import {Color} from '@maplibre/maplibre-gl-style-spec';
 
 const collisionBoxArray = new CollisionBoxArray();
 const transform = new MercatorTransform();
@@ -52,6 +54,32 @@ function createIndexedFeature(id: number, index: number, iconId: string): Indexe
     } as any as IndexedFeature;
 }
 
+function createPointIndexedFeature(properties: Record<string, any>, id = 0, index = 0): IndexedFeature {
+    return {
+        feature: {
+            extent: 8192,
+            type: 1,
+            id,
+            properties,
+            loadGeometry() {
+                return [[{x: 0, y: 0}]];
+            }
+        } as any,
+        id,
+        index,
+        sourceLayerIndex: 0
+    } as IndexedFeature;
+}
+
+function expectColorEquals(actual: Color | null | undefined, expected: Color) {
+    expect(actual).toBeDefined();
+    const actualRgb = actual!.rgb;
+    const expectedRgb = expected.rgb;
+    for (let i = 0; i < expectedRgb.length; i++) {
+        expect(actualRgb[i]).toBeCloseTo(expectedRgb[i], 6);
+    }
+}
+
 describe('SymbolBucket', () => {
     let features: IndexedFeature[];
     beforeAll(() => {
@@ -59,6 +87,91 @@ describe('SymbolBucket', () => {
         const sourceLayer = loadVectorTile().layers.place_label;
         features = [{feature: sourceLayer.feature(10)} as IndexedFeature];
     });
+
+    test('applies color splitting to plain string text-field values', () => {
+        const stringCollisionArray = new CollisionBoxArray();
+        const [namedMarker, namedColor] = defaultSplitChars.entries().next().value as [string, Color];
+        const textValue = `Hello${namedMarker}World${RGB_MARKER}#112233RGB${RGBA_MARKER}#aabbccddRGBA`;
+
+        const bucket = createSymbolBucket('color-string', 'Test', '', stringCollisionArray, {
+            'text-field': ['get', 'name']
+        });
+
+        const options = createPopulateOptions([]);
+        const feature = createPointIndexedFeature({name: textValue});
+
+        bucket.populate([feature], options, undefined as unknown as CanonicalTileID);
+
+        expect(bucket.features).toHaveLength(1);
+        const formatted = bucket.features[0].text;
+        expect(formatted).toBeDefined();
+        if (!formatted) {
+            throw new Error('Expected formatted text when testing color splitting for string values.');
+        }
+
+        const sections = formatted.sections;
+        const sectionByText = (text: string) => sections.find(section => section.text === text);
+
+        expect(sectionByText('Hello')?.textColor).toBeNull();
+        const worldSection = sectionByText('World');
+        expect(worldSection).toBeDefined();
+        expect(worldSection!.textColor).toBe(namedColor);
+
+        const rgbSection = sectionByText('RGB');
+        expect(rgbSection).toBeDefined();
+        const rgbColor = parseHexColor('#112233');
+        expect(rgbColor).toBeDefined();
+        expectColorEquals(rgbSection!.textColor, rgbColor!);
+
+        const rgbaSection = sectionByText('RGBA');
+        expect(rgbaSection).toBeDefined();
+        const rgbaColor = parseHexColor('#aabbccdd');
+        expect(rgbaColor).toBeDefined();
+        expectColorEquals(rgbaSection!.textColor, rgbaColor!);
+    });
+
+    test('applies color splitting to formatted text-field values', () => {
+        const formattedCollisionArray = new CollisionBoxArray();
+        const [namedMarker, namedColor] = defaultSplitChars.entries().next().value as [string, Color];
+        const textValue = `Hello${namedMarker}World${RGB_MARKER}#112233RGB${RGBA_MARKER}#aabbccddRGBA`;
+
+        const bucket = createSymbolBucket('color-formatted', 'Test', '', formattedCollisionArray, {
+            'text-field': ['format', textValue, {}]
+        });
+
+        const options = createPopulateOptions([]);
+        const feature = createPointIndexedFeature({});
+
+        bucket.populate([feature], options, undefined as unknown as CanonicalTileID);
+
+        expect(bucket.features).toHaveLength(1);
+        const formatted = bucket.features[0].text;
+        expect(formatted).toBeDefined();
+        if (!formatted) {
+            throw new Error('Expected formatted text when testing color splitting for formatted values.');
+        }
+
+        const sections = formatted.sections;
+        const sectionByText = (text: string) => sections.find(section => section.text === text);
+
+        expect(sectionByText('Hello')?.textColor).toBeNull();
+        const worldSection = sectionByText('World');
+        expect(worldSection).toBeDefined();
+        expect(worldSection!.textColor).toBe(namedColor);
+
+        const rgbSection = sectionByText('RGB');
+        expect(rgbSection).toBeDefined();
+        const rgbColor = parseHexColor('#112233');
+        expect(rgbColor).toBeDefined();
+        expectColorEquals(rgbSection!.textColor, rgbColor!);
+
+        const rgbaSection = sectionByText('RGBA');
+        expect(rgbaSection).toBeDefined();
+        const rgbaColor = parseHexColor('#aabbccdd');
+        expect(rgbaColor).toBeDefined();
+        expectColorEquals(rgbaSection!.textColor, rgbaColor!);
+    });
+
     test('SymbolBucket', () => {
         const bucketA = bucketSetup();
         const bucketB = bucketSetup();

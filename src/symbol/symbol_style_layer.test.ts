@@ -4,6 +4,7 @@ import {FormatSectionOverride} from '../style/format_section_override';
 import properties, {type SymbolPaintPropsPossiblyEvaluated} from '../style/style_layer/symbol_style_layer_properties.g';
 import {type ZoomHistory} from '../style/zoom_history';
 import {type EvaluationParameters} from '../style/evaluation_parameters';
+import {defaultSplitChars} from '../data/bucket/color_split';
 
 function createSymbolLayer(layerProperties) {
     const layer = new SymbolStyleLayer(layerProperties, {});
@@ -57,6 +58,15 @@ describe('setPaintOverrides', () => {
         const layer = createSymbolLayer(props);
         layer._setPaintOverrides();
         expect(isOverridden(layer.paint.get('text-color'))).toBe(false);
+
+    });
+
+    test('setPaintOverrides, plain string with color marker, overridden text-color', () => {
+        const namedMarker = defaultSplitChars.keys().next().value as string;
+        const props = {layout: {'text-field': `hello${namedMarker}world`}};
+        const layer = createSymbolLayer(props);
+        layer._setPaintOverrides();
+        expect(isOverridden(layer.paint.get('text-color'))).toBe(true);
 
     });
 
@@ -128,6 +138,14 @@ describe('hasPaintOverrides', () => {
         const props = {layout: {'text-field': matchExpr}};
         const layer = createSymbolLayer(props);
         expect(SymbolStyleLayer.hasPaintOverride(layer.layout, 'text-color')).toBe(false);
+
+    });
+
+    test('plain string with color marker requires override', () => {
+        const namedMarker = defaultSplitChars.keys().next().value as string;
+        const props = {layout: {'text-field': `hello${namedMarker}world`}};
+        const layer = createSymbolLayer(props);
+        expect(SymbolStyleLayer.hasPaintOverride(layer.layout, 'text-color')).toBe(true);
 
     });
 

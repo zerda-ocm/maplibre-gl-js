@@ -5,6 +5,7 @@ import {StyleLayer} from '../style_layer';
 import {SymbolBucket, type SymbolFeature} from '../../data/bucket/symbol_bucket';
 import {resolveTokens} from '../../util/resolve_tokens';
 import properties, {type SymbolLayoutPropsPossiblyEvaluated, type SymbolPaintPropsPossiblyEvaluated} from './symbol_style_layer_properties.g';
+import {containsColorMarker, defaultSplitChars} from '../../data/bucket/color_split';
 
 import {
     type Transitionable,
@@ -155,18 +156,37 @@ export class SymbolStyleLayer extends StyleLayer {
             }
         };
 
-        const checkTextValue = (textValue: PossiblyEvaluatedPropertyValue<Formatted>) => {
+        const checkStringForOverrides = (text: string | null | undefined) => {
+            if (!text || hasOverrides) return;
+            if (containsColorMarker(text, defaultSplitChars)) {
+                hasOverrides = true;
+            }
+        };
+
+        const checkFormatted = (formatted: Formatted) => {
+            if (!formatted || hasOverrides) return;
+            checkSections(formatted.sections);
+        };
+
+        const checkTextValue = (textValue: PossiblyEvaluatedPropertyValue<any>) => {
             if (!textValue || hasOverrides) return;
 
-            if (textValue.value.kind === 'constant' && textValue.value.value instanceof Formatted) {
-                checkSections(textValue.value.value.sections);
+            if (textValue.value.kind === 'constant') {
+                const constantValue = textValue.value.value;
+                if (constantValue instanceof Formatted) {
+                    checkFormatted(constantValue);
+                } else if (typeof constantValue === 'string') {
+                    checkStringForOverrides(constantValue);
+                }
             } else if (textValue.value.kind === 'source' || textValue.value.kind === 'composite') {
                 const checkExpression = (expression: Expression) => {
                     if (hasOverrides) return;
 
                     if (expression instanceof Literal && typeOf(expression.value) === FormattedType) {
                         const formatted: Formatted = (expression.value as any);
-                        checkSections(formatted.sections);
+                        checkFormatted(formatted);
+                    } else if (expression instanceof Literal && typeof expression.value === 'string') {
+                        checkStringForOverrides(expression.value);
                     } else if (expression instanceof FormatExpression) {
                         checkSections(expression.sections);
                     } else {

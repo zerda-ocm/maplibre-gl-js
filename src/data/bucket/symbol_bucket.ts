@@ -522,7 +522,19 @@ export class SymbolBucket implements Bucket {
                     return undefined;
                 }
                 const resolvedTokens = layer.getValueAndResolveTokens(propertyName, evaluationFeature, canonical, availableImages);
-                const formattedText = applyColorSplit(Formatted.factory(resolvedTokens), splitChars);
+
+                let formattedValue: Formatted;
+                if (resolvedTokens instanceof Formatted) {
+                    formattedValue = resolvedTokens;
+                } else if (resolvedTokens === null || resolvedTokens === undefined) {
+                    return undefined;
+                } else if (typeof resolvedTokens === 'string' || typeof resolvedTokens === 'number' || typeof resolvedTokens === 'boolean') {
+                    formattedValue = Formatted.fromString(String(resolvedTokens));
+                } else {
+                    return undefined;
+                }
+
+                const formattedText = applyColorSplit(formattedValue, splitChars);
                 if (!formattedText || formattedText.isEmpty()) {
                     return undefined;
                 }
