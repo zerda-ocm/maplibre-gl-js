@@ -163,6 +163,57 @@ void main() {
         1.1e3,                          // Mie scale height
         0.758                           // Mie preferred scattering direction
     );
+    // Add a soft white hazy glow behind the globe that's ~5% larger than the globe.
+    // This is computed by checking the closest approach of the view ray to the globe center
+    // and creating a smooth falloff between the planet radius and the glow radius.
+    {
+        vec3 r = normalize(view_direction);
+        vec3 r0 = scale_camera_pos;
+
+        // Check whether this ray intersects the planet (in Earth-scaled units).
+        vec2 pPlanet = rsi(r0, r, EARTH_RADIUS);
+        bool hitsPlanet = (pPlanet.x <= pPlanet.y && pPlanet.x > 0.0);
+
+        float glow = 0.0;
+        if (!hitsPlanet) {
+            // Glow radius ~5% larger than planet
+            float glowRadius = EARTH_RADIUS * 1.05;
+
+            // Compute the parameter t for the closest approach along the ray
+            float tClosest = -dot(r0, r);
+            if (tClosest > 0.0) {
+                vec3 closestPos = r0 + r * tClosest;
+                float d = length(closestPos);
+
+                if (d < glowRadius) {
+                    // Normalize such that at d == EARTH_RADIUS => 1.0, and at d == glowRadius => 0.0
+                    float edge = (glowRadius - EARTH_RADIUS);
+                    float x = (glowRadius - d) / edge;
+                    // Smooth falloff and slightly sharper inner edge
+                    float baseGlow = pow(clamp(x, 0.0, 1.0), 1.5);
+
+                    // Attenuate the glow based on the sun direction so the night/shadow
+                    // side of the globe gets a weaker halo. We compute the dot between
+                    // the normalized closest point on the ray and the sun direction.
+                    vec3 sunDir = normalize(u_sun_pos);
+                    vec3 nClosest = normalize(closestPos);
+                    // Map dot from [-1,1] to an attenuation factor where
+                    // areas facing the sun are near 1.0 and shadowed areas drop toward 0.0.
+                    // Tweak the constants to taste; this keeps a small rim even in shadow.
+                    float sunDot = dot(nClosest, sunDir);
+                    float sunAttenuation = clamp(sunDot * 0.8 + 0.2, 0.0, 1.0);
+
+                    glow = baseGlow * sunAttenuation;
+                }
+            }
+        }
+
+    // Add a subtle light-blue haze contribution (tune intensity as needed).
+    // Keep it in linear space and rely on existing exposure/gamma steps below.
+    // A soft bluish color helps the atmosphere feel more natural than pure white.
+    color.rgb += vec3(0.6, 0.75, 1.0) * glow * 0.5;
+        color.rgb = clamp(color.rgb, 0.0, 1.0);
+    }
 
     // Apply exposure.
     color.rgb = 1.0 - exp(-1.0 * color.rgb);
