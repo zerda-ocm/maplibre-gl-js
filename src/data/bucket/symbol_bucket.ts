@@ -438,6 +438,11 @@ export class SymbolBucket implements Bucket {
         this.sourceID = options.sourceID;
     }
 
+    // A large offset to ensure secondary text (text-field2) sorts after primary text
+    // when using the same `symbol-sort-key` value. This is intentionally large
+    // to avoid colliding with typical user-provided sort keys.
+    static TEXT_FIELD2_SORT_KEY_OFFSET = 1000000;
+
     createArrays() {
         this.text = new SymbolBuffers(new ProgramConfigurationSet(this.layers, this.zoom, property => /^text/.test(property)));
         this.icon = new SymbolBuffers(new ProgramConfigurationSet(this.layers, this.zoom, property => /^icon/.test(property)));
@@ -571,6 +576,13 @@ export class SymbolBucket implements Bucket {
                 symbolSortKey.evaluate(evaluationFeature, {}, canonical) :
                 undefined;
 
+            // If this layer uses symbol-sort-key, compute an adjusted sort key for
+            // secondary text (text-field2) so that it always renders after the
+            // primary text even when the base symbol-sort-key is equal.
+            const secondarySortKey = (typeof sortKey === 'number') ?
+                (sortKey + SymbolBucket.TEXT_FIELD2_SORT_KEY_OFFSET) :
+                sortKey;
+
             const shouldAddPrimary = !!text || !!icon;
             if (shouldAddPrimary) {
                 const primaryFeature: SymbolFeature = {
@@ -598,7 +610,7 @@ export class SymbolBucket implements Bucket {
                     geometry: evaluationFeature.geometry,
                     properties: feature.properties,
                     type: VectorTileFeature.types[feature.type],
-                    sortKey,
+                    sortKey: secondarySortKey,
                     isTextField2: true
                 };
                 this.features.push(secondaryFeature);
