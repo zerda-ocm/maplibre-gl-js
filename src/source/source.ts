@@ -46,6 +46,11 @@ export interface Source {
      */
     tileSize: number;
     /**
+     * Optional per-source toggle to enable/disable latitude-based globe zoom reduction.
+     * When `false`, the covering tiles logic will not reduce tile zooms near the poles for this source.
+     */
+    enableGlobeZoomReduction?: boolean;
+    /**
      * The attribution for the source.
      */
     attribution?: string;

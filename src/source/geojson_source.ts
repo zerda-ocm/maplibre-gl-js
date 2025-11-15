@@ -263,6 +263,9 @@ export class GeoJSONSource extends Evented implements Source {
      */
     async getData(): Promise<GeoJSON.GeoJSON> {
         const options: LoadGeoJSONParameters = extend({type: this.type}, this.workerOptions);
+        // Inform the worker about the current projection mode so it can avoid
+        // any Mercator-specific clamping when the globe projection is active.
+        options.isGlobeProjection = !!(this.map && this.map.style.projection?.transitionState > 0);
         return this.actor.sendAsync({type: MessageType.getData, data: options});
     }
 
@@ -395,6 +398,9 @@ export class GeoJSONSource extends Evented implements Source {
         const {data, diff} = this._pendingWorkerUpdate;
 
         const options: LoadGeoJSONParameters = extend({type: this.type}, this.workerOptions);
+        // Inform the worker about the current projection mode so it can avoid
+        // any Mercator-specific clamping when the globe projection is active.
+        options.isGlobeProjection = !!(this.map && this.map.style.projection?.transitionState > 0);
         if (data) {
             if (typeof data === 'string') {
                 options.request = this.map._requestManager.transformRequest(browser.resolveURL(data as string), ResourceType.Source);

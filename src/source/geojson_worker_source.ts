@@ -33,6 +33,10 @@ export type GeoJSONWorkerOptions = {
     filter?: Array<unknown>;
     promoteId?: string;
     collectResourceTiming?: boolean;
+    // When true, indicates the main thread is rendering the globe projection.
+    // Workers can use this hint to avoid applying any Mercator-specific
+    // clamping or pre-processing that assumes Web Mercator latitude limits.
+    isGlobeProjection?: boolean;
 };
 
 /**

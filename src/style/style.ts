@@ -33,12 +33,21 @@ import type Point from '@mapbox/point-geometry';
 
 // We're skipping validation errors with the `source.canvas` identifier in order
 // to continue to allow canvas sources to be added at runtime/updated in
-// smart setStyle (see https://github.com/mapbox/mapbox-gl-js/pull/6424):
+// smart setStyle (see https://github.com/mapbox/mapbox-gl-js/pull/6424).
+// Additionally, allow a custom per-source property `enableGlobeZoomReduction` to be
+// present in source specifications without failing validation. The official
+// MapLibre style-spec does not include this custom property, so validation will
+// report it as an unknown property; filter that particular message here so that
+// users can opt-in per-source without modifying external spec code.
 const emitValidationErrors = (evented: Evented, errors?: ReadonlyArray<{
     message: string;
     identifier?: string;
 }> | null) =>
-    _emitValidationErrors(evented, errors && errors.filter(error => error.identifier !== 'source.canvas'));
+    _emitValidationErrors(evented, errors && errors.filter(error =>
+        error.identifier !== 'source.canvas' &&
+        // allow unknown property for enableGlobeZoomReduction in source definitions
+        !error.message?.includes('unknown property "enableGlobeZoomReduction"')
+    ));
 
 import type {Map} from '../ui/map';
 import type {IReadonlyTransform, ITransform} from '../geo/transform_interface';

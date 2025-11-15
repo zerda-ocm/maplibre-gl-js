@@ -551,7 +551,10 @@ export class SourceCache extends Evented {
                 roundZoom: this.usedForTerrain ? false : this._source.roundZoom,
                 reparseOverscaled: this._source.reparseOverscaled,
                 terrain,
-                calculateTileZoom: this._source.calculateTileZoom
+                calculateTileZoom: this._source.calculateTileZoom,
+                // read the flag from the source's original options object, since most built-in
+                // source classes store unknown properties there (e.g. RasterTileSource._options)
+                enableGlobeZoomReduction: (this._source as any)._options?.enableGlobeZoomReduction
             });
 
             if (this._source.hasTile) {
@@ -1113,7 +1116,7 @@ export class SourceCache extends Evented {
             bounds.shrinkBy(Math.min(bounds.width(), bounds.height()) * 0.001);
             const projected = bounds.map(project);
 
-            const newBounds = Bounds.fromPoints(transformed); 
+            const newBounds = Bounds.fromPoints(transformed);
 
             if (!newBounds.covers(projected)) {
                 transformed = transformed.map((coord) => coord.x > 0.5 ?
