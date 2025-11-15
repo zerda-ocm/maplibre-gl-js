@@ -303,7 +303,6 @@ export function coveringTiles(transform: IReadonlyTransform, options: CoveringTi
         if (typeof tileLODReduction === 'number' && tileLODReduction !== 0) {
             thisTileDesiredZ -= tileLODReduction;
         }
-
         thisTileDesiredZ = (options.roundZoom ? Math.round : Math.floor)(thisTileDesiredZ);
         thisTileDesiredZ = Math.max(0, thisTileDesiredZ);
         const z = Math.min(thisTileDesiredZ, maxZoom);

@@ -21,6 +21,7 @@ The new option is named `enableGlobeZoomReduction` and is accepted in a source s
 
 Note: the implementation uses a cosine-based falloff from equator to pole and a hard-coded maximum reduction of 2.0 zoom levels at the pole. See `covering_tiles.ts` for the exact formula.
 
+<<<<<<< HEAD
 ### New: per-source global LOD reduction
 
 In addition to the latitude-aware behavior, there is a new per-source option `tileLODReduction` (number) that shifts the entire source's requested LOD downward by the specified number of zoom levels. For example, `tileLODReduction: 1` will request tiles one zoom level lower across the whole source (so a view that would normally request z=3 tiles will request z=2 tiles instead).
@@ -41,6 +42,8 @@ Example:
 }
 ```
 
+=======
+>>>>>>> e81d8e80c (LOD reduction towards poles)
 ## Example source snippets
 
 Add the option to a source in your style (the validator in this tree has been adjusted to allow the custom property):
@@ -123,4 +126,8 @@ Add the option to a source in your style (the validator in this tree has been ad
 
 ---
 
+<<<<<<< HEAD
 If you'd like, I can add a small automated test that checks the reduction behavior for a few sample tiles and zooms, or expand this doc into the developer-guides area with diagrams and before/after screenshots.
+=======
+If you'd like, I can add a small automated test that checks the reduction behavior for a few sample tiles and zooms, or expand this doc into the developer-guides area with diagrams and before/after screenshots.
+>>>>>>> e81d8e80c (LOD reduction towards poles)

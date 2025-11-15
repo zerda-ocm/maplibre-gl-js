@@ -45,10 +45,9 @@ const emitValidationErrors = (evented: Evented, errors?: ReadonlyArray<{
 }> | null) =>
     _emitValidationErrors(evented, errors && errors.filter(error =>
         error.identifier !== 'source.canvas' &&
-        // allow unknown property for enableGlobeZoomReduction in source definitions
-        // allow unknown properties for our custom per-source options in source definitions
-        !error.message?.includes('unknown property "enableGlobeZoomReduction"') &&
-        !error.message?.includes('unknown property "tileLODReduction"')
+    // allow unknown property for enableGlobeZoomReduction and tileLODReduction in source definitions
+    !error.message?.includes('unknown property "enableGlobeZoomReduction"') &&
+    !error.message?.includes('unknown property "tileLODReduction"')
     ));
 
 import type {Map} from '../ui/map';
