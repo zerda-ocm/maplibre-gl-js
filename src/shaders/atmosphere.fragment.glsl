@@ -208,11 +208,44 @@ void main() {
             }
         }
 
-    // Add a subtle light-blue haze contribution (tune intensity as needed).
-    // Keep it in linear space and rely on existing exposure/gamma steps below.
-    // A soft bluish color helps the atmosphere feel more natural than pure white.
-    color.rgb += vec3(0.6, 0.75, 1.0) * glow * 0.5;
-        color.rgb = clamp(color.rgb, 0.0, 1.0);
+        // Add a subtle light-blue haze contribution (tune intensity as needed).
+        // Also blend a slight green tint at the outer ~1% edge of the glow to
+        // give a more natural rim color.
+        // Keep it in linear space and rely on existing exposure/gamma steps below.
+        vec3 blueTint = vec3(0.6, 0.75, 1.0);
+        // Stronger, more saturated green for a visible rim
+        vec3 greenTint = vec3(0.15, 1.0, 0.35);
+
+        // Parameters to control intensity and outer band width
+        float baseIntensity = 0.4;
+        float outerBoost = 1.2; // how much stronger the outer rim becomes
+        float outerBand = 0.7; // 3% outer band for a more visible green rim
+
+        float glowRadius = EARTH_RADIUS * 1.05;
+        float tClosest = -dot(r0, r);
+        if (tClosest > 0.0) {
+            vec3 closestPos = r0 + r * tClosest;
+            float d = length(closestPos);
+            float edge = (glowRadius - EARTH_RADIUS);
+            // x = (glowRadius - d) / edge, clamped 0..1
+            float x = clamp((glowRadius - d) / edge, 0.0, 1.0);
+
+            // outerMix goes toward 1.0 at the absolute outermost edge (x == 0)
+            // and falls to 0.0 once inside the outerBand
+            float outerMix = 1.0 - smoothstep(0.0, outerBand, x);
+
+            // Blend the tint: more green near outer edge, blue elsewhere.
+            vec3 tint = mix(blueTint, greenTint, outerMix);
+
+            // Boost intensity near the outer edge to make the green more visible
+            float intensity = baseIntensity + outerMix * outerBoost;
+
+            color.rgb += tint * glow * intensity;
+            color.rgb = clamp(color.rgb, 0.0, 1.0);
+        } else {
+            color.rgb += blueTint * glow * baseIntensity;
+            color.rgb = clamp(color.rgb, 0.0, 1.0);
+        }
     }
 
     // Apply exposure.
