@@ -593,6 +593,10 @@ export class TileManager extends Evented {
                 reparseOverscaled: this._source.reparseOverscaled,
                 terrain,
                 calculateTileZoom: this._source.calculateTileZoom,
+                // read the flag from the source's original options object, since most built-in
+                // source classes store unknown properties there (e.g. RasterTileSource._options)
+                enableGlobeZoomReduction: (this._source as any)._options?.enableGlobeZoomReduction,
+                tileLODReduction: (this._source as any)._options?.tileLODReduction
             });
 
             if (this._source.hasTile) { // tile should be in bounds

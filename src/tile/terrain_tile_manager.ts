@@ -99,8 +99,12 @@ export class TerrainTileManager extends Evented {
             minzoom: this.minzoom,
             maxzoom: this.maxzoom,
             reparseOverscaled: false,
-            terrain,
-            calculateTileZoom: this.tileManager._source.calculateTileZoom
+        terrain,
+        calculateTileZoom: this.tileManager._source.calculateTileZoom,
+        // read the flag from the source's original options object, since most built-in
+        // source classes store unknown properties there (e.g. RasterTileSource._options)
+        enableGlobeZoomReduction: (this.tileManager._source as any)._options?.enableGlobeZoomReduction,
+        tileLODReduction: (this.tileManager._source as any)._options?.tileLODReduction
         })) {
             keys[tileID.key] = true;
             this._renderableTilesKeys.push(tileID.key);
