@@ -47,6 +47,13 @@ export type CoveringTilesOptions = {
      * Setting to `false` disables the reduction.
      */
     enableGlobeZoomReduction?: boolean | number;
+    /**
+     * Global per-source LOD reduction applied to every tile of the source.
+     * If set to a number `r`, the requested tile zoom for all tiles will be reduced by `r` zoom levels
+     * (for example, `tileLODReduction: 1` will request tiles one zoom level lower than normal).
+     * If omitted or not a number, no global reduction is applied.
+     */
+    tileLODReduction?: number;
 };
 
 export type CoveringTilesOptionsInternal = CoveringTilesOptions & {
@@ -289,6 +296,14 @@ export function coveringTiles(transform: IReadonlyTransform, options: CoveringTi
             const reduction = maxGlobeZoomReduction * (1 - Math.cos(degreesToRadians(absLat)));
             thisTileDesiredZ -= reduction;
         }
+
+        // Apply a global per-source LOD reduction if requested. This shifts all tiles for
+        // this source by the configured number of zoom levels (independent of latitude).
+        const tileLODReduction = options.tileLODReduction;
+        if (typeof tileLODReduction === 'number' && tileLODReduction !== 0) {
+            thisTileDesiredZ -= tileLODReduction;
+        }
+
         thisTileDesiredZ = (options.roundZoom ? Math.round : Math.floor)(thisTileDesiredZ);
         thisTileDesiredZ = Math.max(0, thisTileDesiredZ);
         const z = Math.min(thisTileDesiredZ, maxZoom);

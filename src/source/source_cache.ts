@@ -296,6 +296,24 @@ export class SourceCache extends Evented {
         this._setTileReloadTimer(id, tile);
         if (this.getSource().type === 'raster-dem' && tile.dem) this._backfillDEM(tile);
         this._state.initializeTileState(tile, this.map ? this.map.painter : null);
+        // If a per-source global LOD reduction is in effect, ensure symbol tiles fade in
+        // when they become available. Without this, using `tileLODReduction` can cause
+        // labels to pop into existence instead of fading in (because tiles may be
+        // overscaled or treated as already present). To preserve previous fade-in
+        // behaviour, register a self-fade on tiles that contain symbols.
+        try {
+            const tileLODReduction = (this._source as any)._options?.tileLODReduction;
+            if (typeof tileLODReduction === 'number' && tile.hasSymbolBuckets && this.map) {
+                // Use the map's fade duration (same source uses elsewhere) to time the fade
+                const fadeDuration = this.map._fadeDuration ?? 0;
+                if (fadeDuration > 0) {
+                    const fadeEndTime = now() + fadeDuration;
+                    tile.setSelfFadeLogic(fadeEndTime);
+                }
+            }
+        } catch (e) {
+            // Be defensive: don't let this non-critical behaviour break tile loading
+        }
 
         if (!tile.aborted) {
             this._source.fire(new Event('data', {dataType: 'source', tile, coord: tile.tileID}));
@@ -554,7 +572,8 @@ export class SourceCache extends Evented {
                 calculateTileZoom: this._source.calculateTileZoom,
                 // read the flag from the source's original options object, since most built-in
                 // source classes store unknown properties there (e.g. RasterTileSource._options)
-                enableGlobeZoomReduction: (this._source as any)._options?.enableGlobeZoomReduction
+                enableGlobeZoomReduction: (this._source as any)._options?.enableGlobeZoomReduction,
+                tileLODReduction: (this._source as any)._options?.tileLODReduction
             });
 
             if (this._source.hasTile) {

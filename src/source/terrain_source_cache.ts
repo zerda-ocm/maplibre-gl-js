@@ -96,7 +96,8 @@ export class TerrainSourceCache extends Evented {
             reparseOverscaled: false,
             terrain,
             calculateTileZoom: this.sourceCache._source.calculateTileZoom,
-            enableGlobeZoomReduction: (this.sourceCache._source as any)._options?.enableGlobeZoomReduction
+            enableGlobeZoomReduction: (this.sourceCache._source as any)._options?.enableGlobeZoomReduction,
+            tileLODReduction: (this.sourceCache._source as any)._options?.tileLODReduction
         })) {
             keys[tileID.key] = true;
             this._renderableTilesKeys.push(tileID.key);
