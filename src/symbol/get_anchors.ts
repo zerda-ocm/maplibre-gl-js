@@ -6,7 +6,7 @@ import {tileCoordinatesToLocation, lngLatToTileCoordinates} from '../geo/project
 
 import type Point from '@mapbox/point-geometry';
 import type {Shaping, PositionedIcon} from './shaping';
-import type {CanonicalTileID} from '../source/tile_id';
+import type {CanonicalTileID} from '../tile/tile_id';
 import { LngLat } from '../geo/lng_lat';
 
 export {getAnchors, getCenterAnchor};

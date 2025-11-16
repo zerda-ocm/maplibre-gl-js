@@ -16,6 +16,7 @@ import type {ImagePosition} from '../render/image_atlas';
 import {IMAGE_PADDING} from '../render/image_atlas';
 import type {Rect, GlyphPosition} from '../render/glyph_atlas';
 import type {Formatted, VerticalAlign} from '@maplibre/maplibre-gl-style-spec';
+import {TextRotationAlignmentOverrideValue, encodeTextRotationAlignment} from './text_rotation_alignment';
 
 enum WritingMode {
     none = 0,
@@ -353,6 +354,8 @@ function shapeLines(shaping: Shaping,
                 sectionIndex: line.getSectionIndex(i),
                 metrics: null,
                 rect: null
+                ,
+                textRotationAlignmentOverride: 'textRotationAlignmentOverride' in section ? (section as any).textRotationAlignmentOverride : TextRotationAlignmentOverrideValue.Inherit
             };
 
             let sectionAttributes: ShapingSectionAttributes;
