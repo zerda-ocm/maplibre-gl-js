@@ -2,7 +2,7 @@ import {vi, describe, test, expect} from 'vitest';
 import Point from '@mapbox/point-geometry';
 import {CollisionIndex, viewportPadding} from './collision_index';
 import {MercatorTransform} from '../geo/projection/mercator_transform';
-import {CanonicalTileID, UnwrappedTileID} from '../source/tile_id';
+import {CanonicalTileID, UnwrappedTileID} from '../tile/tile_id';
 import {mat4} from 'gl-matrix';
 
 describe('CollisionIndex', () => {

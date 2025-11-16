@@ -4,8 +4,8 @@ import {RGB_MARKER, RGBA_MARKER, defaultSplitChars, parseHexColor} from './color
 import {CollisionBoxArray} from '../../data/array_types.g';
 import {performSymbolLayout} from '../../symbol/symbol_layout';
 import {Placement} from '../../symbol/placement';
-import {type CanonicalTileID, OverscaledTileID} from '../../source/tile_id';
-import {Tile} from '../../source/tile';
+import {type CanonicalTileID, OverscaledTileID} from '../../tile/tile_id';
+import {Tile} from '../../tile/tile';
 import {CrossTileSymbolIndex} from '../../symbol/cross_tile_symbol_index';
 import {FeatureIndex} from '../../data/feature_index';
 import {createSymbolBucket, createSymbolIconBucket} from '../../../test/unit/lib/create_symbol_layer';
@@ -286,8 +286,8 @@ describe('SymbolBucket', () => {
     });
 
     test('SymbolBucket image mismatched sdf', () => {
-        const spy = vi.spyOn(console, 'warn').mockImplementation(() => { });
-        spy.mockReset();
+        const originalWarn = console.warn;
+        console.warn = vi.fn();
 
         const imageMap = {
             a: {
@@ -322,7 +322,8 @@ describe('SymbolBucket', () => {
         performSymbolLayout({bucket, imageMap, imagePositions: imagePos, subdivisionGranularity: SubdivisionGranularitySetting.noSubdivision} as any);
 
         // true SDF and false SDF in same bucket should trigger warning
-        expect(spy).toHaveBeenCalledTimes(1);
+        expect(console.warn).toHaveBeenCalledTimes(1);
+        console.warn = originalWarn;
     });
 
     test('SymbolBucket creates secondary text instances from text-field2', () => {
