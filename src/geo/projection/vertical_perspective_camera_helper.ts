@@ -135,7 +135,7 @@ export class VerticalPerspectiveCameraHelper implements ICameraHelper {
         const oldZoom = tr.zoom;
         tr.setCenter(computeGlobePanCenter(deltas.panDelta, tr).wrap());
         // Setting the center might adjust zoom to keep globe size constant, we need to avoid adding this adjustment a second time
-        tr.setZoom(oldZoom + getZoomAdjustment(oldLat, tr.center.lat));
+        tr.setZoom(oldZoom);
     }
 
     cameraForBoxAndBearing(options: CameraForBoundsOptions, padding: PaddingOptions, bounds: LngLatBounds, bearing: number, tr: ITransform): CameraForBoxAndBearingHandlerResult {
@@ -313,7 +313,8 @@ export class VerticalPerspectiveCameraHelper implements ICameraHelper {
             if (isZooming) {
                 const normalizedInterpolatedZoom = interpolates.number(normalizedStartZoom, normalizedEndZoom, k);
                 const interpolatedZoom = normalizedInterpolatedZoom + getZoomAdjustment(0, tr.center.lat);
-                tr.setZoom(interpolatedZoom);
+                if (optionsZoom) tr.setZoom(interpolatedZoom);
+                else tr.setZoom(startZoom);
             }
         };
 

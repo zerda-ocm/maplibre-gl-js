@@ -228,7 +228,7 @@ function drawLineTiles(
             applyTerrainMatrix: true
         });
 
-        const pixelRatio = transform.getPixelScale();
+        const pixelRatio = 1;
 
         let uniformValues;
         if (image) {
