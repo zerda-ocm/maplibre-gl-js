@@ -146,8 +146,37 @@ function propertyValue(property, type) {
     }
 }
 
-const layers = Object.keys(v8.layer.type.values).map((type) => {
-    const layoutProperties = Object.keys(v8[`layout_${type}`]).reduce((memo, name) => {
+type LayerPropertiesBundle = {
+    type: string;
+    layoutProperties: any[];
+    paintProperties: any[];
+};
+
+const symbolClonePairs: Array<[string, string]> = [
+    ['text-field', 'text-field2'],
+    ['text-anchor', 'text-field2-anchor'],
+    ['text-offset', 'text-field2-offset'],
+    ['text-radial-offset', 'text-field2-radial-offset'],
+    ['text-size', 'text-field2-size']
+];
+
+const layers: LayerPropertiesBundle[] = Object.keys(v8.layer.type.values).map((type) => {
+
+    if (type === 'symbol') {
+        for (const [source, target] of symbolClonePairs) {
+            if (!v8[`layout_${type}`][target]) {
+                const sourceSpec = v8[`layout_${type}`][source];
+                if (!sourceSpec) {
+                    throw new Error(`Expected ${source} spec for symbol layer`);
+                }
+                const clonedSpec = JSON.parse(JSON.stringify(sourceSpec));
+                clonedSpec.name = target;
+                v8[`layout_${type}`][target] = clonedSpec;
+            }
+        }
+    }
+
+    const layoutProperties = Object.keys(v8[`layout_${type}`]).reduce<any[]>((memo, name) => {
         if (name !== 'visibility') {
             v8[`layout_${type}`][name].name = name;
             v8[`layout_${type}`][name].layerType = type;
@@ -156,7 +185,7 @@ const layers = Object.keys(v8.layer.type.values).map((type) => {
         return memo;
     }, []);
 
-    const paintProperties = Object.keys(v8[`paint_${type}`]).reduce((memo, name) => {
+    const paintProperties = Object.keys(v8[`paint_${type}`]).reduce<any[]>((memo, name) => {
         v8[`paint_${type}`][name].name = name;
         v8[`paint_${type}`][name].layerType = type;
         memo.push(v8[`paint_${type}`][name]);
@@ -166,7 +195,7 @@ const layers = Object.keys(v8.layer.type.values).map((type) => {
     return {type, layoutProperties, paintProperties};
 });
 
-function emitlayerProperties(locals) {
+function emitlayerProperties(locals: LayerPropertiesBundle) {
     const output = [];
     const layerType = pascalCase(locals.type);
     const {
@@ -195,10 +224,10 @@ import type {Color, Formatted, Padding, NumberArray, ColorArray, ResolvedImage, 
 import {StylePropertySpecification} from '@maplibre/maplibre-gl-style-spec';
 `);
 
-    const overridables = paintProperties.filter(p => p.overridable);
+    const overridables = paintProperties.filter((p: any) => p.overridable);
     if (overridables.length) {
         const overridesArray = `import {
-            ${overridables.reduce((imports, prop) => { imports.push(runtimeType(prop)); return imports; }, []).join(',\n    ')}
+            ${overridables.reduce((imports: any[], prop: any) => { imports.push(runtimeType(prop)); return imports; }, []).join(',\n    ')}
         } from '@maplibre/maplibre-gl-style-spec';
         `;
         output.push(overridesArray);

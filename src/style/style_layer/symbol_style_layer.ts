@@ -1,3 +1,5 @@
+import '../style_spec_extension.ts';
+
 import {StyleLayer} from '../style_layer.ts';
 
 import {SymbolBucket, type SymbolFeature} from '../../data/bucket/symbol_bucket.ts';
