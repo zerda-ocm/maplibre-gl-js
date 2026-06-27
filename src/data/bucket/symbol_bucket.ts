@@ -55,6 +55,8 @@ import type {SizeData} from '../../symbol/symbol_size.ts';
 import type {FeatureStates} from '../../source/source_state.ts';
 import type {ImagePosition} from '../../render/image_atlas.ts';
 import type {VectorTileLayerLike} from '@maplibre/vt-pbf';
+import {Color} from '@maplibre/maplibre-gl-style-spec';
+import {namedColors} from '@maplibre/maplibre-gl-style-spec/src/expression/types/parse_css_color';
 
 export type SingleCollisionBox = {
     x1: number;
@@ -459,6 +461,33 @@ export class SymbolBucket implements Bucket {
         const availableImages = options.availableImages;
         const globalProperties = new EvaluationParameters(this.zoom);
 
+        function generateSplitChars(namedColors: Record<string, [number, number, number]>): Map<string, Color> {
+            const splitChars = new Map<string, Color>();
+            let charCode = 0xE001; // Start of the Unicode Private Use Area
+
+            for (const colorName in namedColors) {
+                const rgb = namedColors[colorName];
+                const color = new Color(rgb[0] / 255, rgb[1] / 255, rgb[2] / 255, 1);
+                splitChars.set(String.fromCodePoint(charCode), color);
+                charCode++;
+            }
+
+            return splitChars;
+        }
+
+        const splitChars = generateSplitChars(namedColors);
+
+        // Optimization 2: Pre-calculate split points to avoid repeated indexOf calls
+        function getSplitPoints(text, splitChars) {
+            const splitPoints = [];
+            for (let i = 0; i < text.length; i++) {
+                if (splitChars.has(text[i])) {
+                    splitPoints.push(i);
+                }
+            }
+            return splitPoints;
+        }
+
         for (const {feature, id, index, sourceLayerIndex} of features) {
 
             const needGeometry = layer._featureFilter.needGeometry;
@@ -476,6 +505,40 @@ export class SymbolBucket implements Bucket {
                 // conversion here.
                 const resolvedTokens = layer.getValueAndResolveTokens('text-field', evaluationFeature, canonical, availableImages);
                 const formattedText = Formatted.factory(resolvedTokens);
+
+                // check for color escape sequences
+                if (formattedText) {
+                    const updatedSections = [];
+                    for (const originalSection of formattedText.sections) {
+                        const text = originalSection.text;
+                        const splitPoints = getSplitPoints(text, splitChars);
+                        if (splitPoints.length > 0) {
+                            let lastSplitIndex = 0;
+                            for (let i = 0; i < splitPoints.length; i++) {
+                                const splitPoint = splitPoints[i];
+                                updatedSections.push({
+                                    ...originalSection,
+                                    text: text.substring(lastSplitIndex, splitPoint + 1),
+                                    textColor: i === 0 ? originalSection.textColor : splitChars.get(text[splitPoints[i - 1]])
+                                });
+                                lastSplitIndex = splitPoint + 1;
+                            }
+                            // Add the last section
+                            if (lastSplitIndex < text.length) {
+                                updatedSections.push({
+                                    ...originalSection,
+                                    text: text.substring(lastSplitIndex),
+                                    textColor: splitChars.get(text[splitPoints[splitPoints.length - 1]])
+                                });
+                            }
+                        } else {
+                            // No split points found, keep the original section
+                            updatedSections.push(originalSection);
+                        }
+                    }
+                    // Replace all original sections with the updated sections
+                    formattedText.sections = updatedSections;
+                }
 
                 // on this instance: if hasRTLText is already true, all future calls to containsRTLText can be skipped.
                 this.hasRTLText ||= containsRTLText(formattedText);
