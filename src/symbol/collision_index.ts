@@ -204,7 +204,7 @@ export class CollisionIndex {
         const tileUnitAnchorPoint = new Point(symbol.anchorX, symbol.anchorY);
         const perspectiveRatio = this.getPerspectiveRatio(tileUnitAnchorPoint.x, tileUnitAnchorPoint.y, unwrappedTileID, getElevation);
 
-        const labelPlaneFontSize = pitchWithMap ? (fontSize * this.transform.getPitchedTextCorrection(symbol.anchorX, symbol.anchorY, unwrappedTileID) / perspectiveRatio) : fontSize * perspectiveRatio;
+        const labelPlaneFontSize = pitchWithMap ? fontSize / perspectiveRatio : fontSize * perspectiveRatio;
         const labelPlaneFontScale = labelPlaneFontSize / ONE_EM;
 
         const projectionCache = {projections: {}, offsets: {}, cachedAnchorPoint: undefined, anyProjectionOccluded: false};
@@ -233,7 +233,8 @@ export class CollisionIndex {
             /*flip*/ false,
             symbol,
             false,
-            projectionContext);
+            projectionContext,
+            unwrappedTileID);
 
         let collisionDetected = false;
         let inGrid = false;

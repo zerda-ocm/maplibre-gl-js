@@ -18,6 +18,9 @@ import {findLineIntersection} from '../util/util.ts';
 import {type UnwrappedTileID} from '../tile/tile_id.ts';
 import {type StructArray} from '../util/struct_array.ts';
 import {fastInvertSkewMat4} from '../util/fast_maths.ts';
+import {tileCoordinatesToLocation} from '../geo/projection/mercator_utils.ts';
+import {planetScaleAtLatitude} from '../geo/projection/globe_utils.ts';
+import {Numeric} from 'd3';
 
 /**
  * Pre-allocate objects to avoid online allocation
@@ -299,6 +302,7 @@ export function updateLineLabels(bucket: SymbolBucket,
             dynamicLayoutVertexArray,
             aspectRatio,
             rotateToLine,
+            unwrappedTileID,
         });
 
         useVertical = placeUnflipped.useVertical;
@@ -316,6 +320,7 @@ export function updateLineLabels(bucket: SymbolBucket,
                     dynamicLayoutVertexArray,
                     aspectRatio,
                     rotateToLine,
+                    unwrappedTileID,
                 }).notEnoughRoom)) {
             hideGlyphs(symbol.numGlyphs, dynamicLayoutVertexArray);
         }
@@ -353,7 +358,8 @@ export function placeFirstAndLastGlyph(
     flip: boolean,
     symbol: PlacedSymbol,
     rotateToLine: boolean,
-    projectionContext: SymbolProjectionContext): FirstAndLastGlyphPlacement {
+    projectionContext: SymbolProjectionContext,
+    unwrappedTileID: UnwrappedTileID): FirstAndLastGlyphPlacement {
     const glyphEndIndex = symbol.glyphStartIndex + symbol.numGlyphs;
     const lineStartIndex = symbol.lineStartIndex;
     const lineEndIndex = symbol.lineStartIndex + symbol.lineLength;
@@ -362,12 +368,12 @@ export function placeFirstAndLastGlyph(
     const lastGlyphOffset = glyphOffsetArray.getoffsetX(glyphEndIndex - 1);
 
     const firstPlacedGlyph = placeGlyphAlongLine(fontScale * firstGlyphOffset, lineOffsetX, lineOffsetY, flip, symbol.segment,
-        lineStartIndex, lineEndIndex, projectionContext, rotateToLine);
+        lineStartIndex, lineEndIndex, projectionContext, rotateToLine, unwrappedTileID);
     if (!firstPlacedGlyph)
         return null;
 
     const lastPlacedGlyph = placeGlyphAlongLine(fontScale * lastGlyphOffset, lineOffsetX, lineOffsetY, flip, symbol.segment,
-        lineStartIndex, lineEndIndex, projectionContext, rotateToLine);
+        lineStartIndex, lineEndIndex, projectionContext, rotateToLine, unwrappedTileID);
     if (!lastPlacedGlyph)
         return null;
 
@@ -419,6 +425,7 @@ type GlyphLinePlacementArgs = {
     dynamicLayoutVertexArray: StructArray;
     aspectRatio: number;
     rotateToLine: boolean;
+    unwrappedTileID: UnwrappedTileID;
 };
 
 /*
@@ -440,7 +447,8 @@ function placeGlyphsAlongLine(args: GlyphLinePlacementArgs): GlyphLinePlacementR
         glyphOffsetArray,
         dynamicLayoutVertexArray,
         aspectRatio,
-        rotateToLine
+        rotateToLine,
+        unwrappedTileID
     } = args;
 
     const fontScale = fontSize / 24;
@@ -456,7 +464,7 @@ function placeGlyphsAlongLine(args: GlyphLinePlacementArgs): GlyphLinePlacementR
         // Place the first and the last glyph in the label first, so we can figure out
         // the overall orientation of the label and determine whether it needs to be flipped in keepUpright mode
         // Note: these glyphs are placed onto the label plane
-        const firstAndLastGlyph = placeFirstAndLastGlyph(fontScale, glyphOffsetArray, lineOffsetX, lineOffsetY, flip, symbol, rotateToLine, projectionContext);
+        const firstAndLastGlyph = placeFirstAndLastGlyph(fontScale, glyphOffsetArray, lineOffsetX, lineOffsetY, flip, symbol, rotateToLine, projectionContext, unwrappedTileID);
         if (!firstAndLastGlyph) {
             return {notEnoughRoom: true};
         }
@@ -474,7 +482,7 @@ function placeGlyphsAlongLine(args: GlyphLinePlacementArgs): GlyphLinePlacementR
         for (let glyphIndex = symbol.glyphStartIndex + 1; glyphIndex < glyphEndIndex - 1; glyphIndex++) {
             // Since first and last glyph fit on the line, try placing the rest of the glyphs.
             const placedGlyph = placeGlyphAlongLine(fontScale * glyphOffsetArray.getoffsetX(glyphIndex), lineOffsetX, lineOffsetY, flip, symbol.segment,
-                lineStartIndex, lineEndIndex, projectionContext, rotateToLine);
+                lineStartIndex, lineEndIndex, projectionContext, rotateToLine, unwrappedTileID);
             if (!placedGlyph) {
                 return {notEnoughRoom: true};
             }
@@ -505,7 +513,7 @@ function placeGlyphsAlongLine(args: GlyphLinePlacementArgs): GlyphLinePlacementR
             }
         }
         const singleGlyph = placeGlyphAlongLine(fontScale * glyphOffsetArray.getoffsetX(symbol.glyphStartIndex), lineOffsetX, lineOffsetY, flip, symbol.segment,
-            symbol.lineStartIndex, symbol.lineStartIndex + symbol.lineLength, projectionContext, rotateToLine);
+            symbol.lineStartIndex, symbol.lineStartIndex + symbol.lineLength, projectionContext, rotateToLine, unwrappedTileID);
         if (!singleGlyph || projectionContext.projectionCache.anyProjectionOccluded)
             return {notEnoughRoom: true};
 
@@ -796,7 +804,8 @@ export function placeGlyphAlongLine(
     lineStartIndex: number,
     lineEndIndex: number,
     projectionContext: SymbolProjectionContext,
-    rotateToLine: boolean): PlacedGlyph | null {
+    rotateToLine: boolean,
+    unwrappedTileID: UnwrappedTileID): PlacedGlyph | null {
 
     const combinedOffsetX = flip ?
         offsetX - lineOffsetX :
@@ -829,6 +838,7 @@ export function placeGlyphAlongLine(
     }
 
     let currentVertex = anchorPoint;
+    let currentVertexMerc = anchorPoint;
     let previousVertex = anchorPoint;
 
     // offsetPrev and intersectionPoint are analogous to previousVertex and currentVertex
@@ -842,6 +852,7 @@ export function placeGlyphAlongLine(
     const pathVertices: Point[] = [];
 
     let currentLineSegment: Point;
+    let distanceAdjustment = 0;
     while (distanceFromAnchor + currentSegmentDistance <= absOffsetX) {
         currentIndex += direction;
 
@@ -860,6 +871,14 @@ export function placeGlyphAlongLine(
             distanceFromAnchor,
             previousVertex
         };
+
+        // find next vertex in mercator coordinates
+        currentVertexMerc = new Point(
+            projectionContext.lineVertexArray.getx(currentIndex),
+            projectionContext.lineVertexArray.gety(currentIndex)
+        );
+        const coordinates = tileCoordinatesToLocation(currentVertexMerc.x, currentVertexMerc.y, unwrappedTileID.canonical);
+        distanceAdjustment = planetScaleAtLatitude(coordinates.lat);
 
         // find next vertex in viewport space
         currentVertex = projectLineVertexToLabelPlane(currentIndex, projectionContext, syntheticVertexArgs);
@@ -887,11 +906,11 @@ export function placeGlyphAlongLine(
             pathVertices.push(offsetPreviousVertex);
             currentLineSegment = offsetIntersectionPoint.sub(offsetPreviousVertex);
         }
-        currentSegmentDistance = currentLineSegment.mag();
+        currentSegmentDistance = currentLineSegment.mag() * distanceAdjustment;
     }
 
     // The point is on the current segment. Interpolate to find it.
-    const segmentInterpolationT = (absOffsetX - distanceFromAnchor) / currentSegmentDistance;
+    const segmentInterpolationT = (absOffsetX - (distanceFromAnchor)) / currentSegmentDistance;
     const p = currentLineSegment._mult(segmentInterpolationT)._add(offsetPreviousVertex || previousVertex);
 
     const segmentAngle = angle + Math.atan2(currentVertex.y - previousVertex.y, currentVertex.x - previousVertex.x);

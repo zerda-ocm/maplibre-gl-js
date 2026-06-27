@@ -16,6 +16,7 @@ import type {ImagePosition} from '../render/image_atlas.ts';
 import {IMAGE_PADDING} from '../render/image_atlas.ts';
 import type {Rect, GlyphPosition} from '../render/glyph_atlas.ts';
 import type {Formatted, VerticalAlign} from '@maplibre/maplibre-gl-style-spec';
+import type {CanonicalTileID} from '../tile/tile_id.ts';
 
 enum WritingMode {
     none = 0,
@@ -120,7 +121,8 @@ function shapeText(
     writingMode: WritingMode.horizontal | WritingMode.vertical,
     allowVerticalPlacement: boolean,
     layoutTextSize: number,
-    layoutTextSizeThisZoom: number
+    layoutTextSizeThisZoom: number,
+    canonical: CanonicalTileID
 ): Shaping | false {
     const logicalInput = TaggedString.fromFeature(text, defaultFontStack);
 
@@ -186,7 +188,7 @@ function shapeText(
         verticalizable: false
     };
 
-    shapeLines(shaping, glyphMap, glyphPositions, imagePositions, lines, lineHeight, textAnchor, textJustify, writingMode, spacing, allowVerticalPlacement, layoutTextSizeThisZoom);
+    shapeLines(shaping, glyphMap, glyphPositions, imagePositions, lines, lineHeight, textAnchor, textJustify, writingMode, spacing, allowVerticalPlacement, layoutTextSizeThisZoom, canonical);
     if (isEmpty(positionedLines)) return false;
 
     return shaping;
@@ -305,7 +307,8 @@ function shapeLines(shaping: Shaping,
     writingMode: WritingMode.horizontal | WritingMode.vertical,
     spacing: number,
     allowVerticalPlacement: boolean,
-    layoutTextSizeThisZoom: number) {
+    layoutTextSizeThisZoom: number,
+    canonical: CanonicalTileID) {
 
     let x = 0;
     let y = 0;
@@ -485,7 +488,7 @@ function shapeImageSection(
     // Difference between height of an image and one EM at max line scale.
     // Pushes current line down if an image size is over 1 EM at max line scale.
     const imageOffset = (vertical ? size[0] : size[1]) * section.scale - ONE_EM * lineMaxScale;
-    
+
     return {rect, metrics, baselineOffset, imageOffset};
 }
 

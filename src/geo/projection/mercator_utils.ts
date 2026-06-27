@@ -30,6 +30,27 @@ export function tileCoordinatesToMercatorCoordinates(inTileX: number, inTileY: n
 }
 
 /**
+ * Given a geographical lnglat, return an unrounded
+ * coordinate that represents it at low zoom level.
+ * @param lnglat - the location
+ * @returns The mercator coordinate
+ */
+export function locationToMercatorCoordinate(lnglat: LngLat): MercatorCoordinate {
+    return MercatorCoordinate.fromLngLat(lnglat);
+}
+
+export function lngLatToTileCoordinates(
+    coordinates: LngLat,
+    canonicalTileID: {x: number; y: number; z: number}
+): { tileX: number; tileY: number } {
+    const scale = 1.0 / (1 << canonicalTileID.z);
+    const coords = locationToMercatorCoordinate(coordinates);
+    const tileX = (coords.x - canonicalTileID.x * scale) * EXTENT / scale;
+    const tileY = (coords.y - canonicalTileID.y * scale) * EXTENT / scale;
+    return {tileX, tileY};
+}
+
+/**
  * Returns LngLat for given in-tile coordinates and tile ID.
  * @param inTileX - X coordinate in tile units - range [0..EXTENT].
  * @param inTileY - Y coordinate in tile units - range [0..EXTENT].
