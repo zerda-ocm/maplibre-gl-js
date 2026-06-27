@@ -143,7 +143,6 @@ export class SymbolStyleLayer extends StyleLayer {
     }
 
     static hasPaintOverride(layout: PossiblyEvaluated<SymbolLayoutProps, SymbolLayoutPropsPossiblyEvaluated>, propertyName: string): boolean {
-        const textField = layout.get('text-field');
         const property = properties.paint.properties[propertyName];
         let hasOverrides = false;
 
@@ -156,28 +155,34 @@ export class SymbolStyleLayer extends StyleLayer {
             }
         };
 
-        if (textField.value.kind === 'constant' && textField.value.value instanceof Formatted) {
-            checkSections(textField.value.value.sections);
-        } else if (textField.value.kind === 'source' || textField.value.kind === 'composite') {
+        const checkTextValue = (textValue: PossiblyEvaluatedPropertyValue<Formatted>) => {
+            if (!textValue || hasOverrides) return;
 
-            const checkExpression = (expression: Expression) => {
-                if (hasOverrides) return;
+            if (textValue.value.kind === 'constant' && textValue.value.value instanceof Formatted) {
+                checkSections(textValue.value.value.sections);
+            } else if (textValue.value.kind === 'source' || textValue.value.kind === 'composite') {
+                const checkExpression = (expression: Expression) => {
+                    if (hasOverrides) return;
 
-                if (expression instanceof Literal && typeOf(expression.value) === FormattedType) {
-                    const formatted: Formatted = (expression.value as any);
-                    checkSections(formatted.sections);
-                } else if (expression instanceof FormatExpression) {
-                    checkSections(expression.sections);
-                } else {
-                    expression.eachChild(checkExpression);
+                    if (expression instanceof Literal && typeOf(expression.value) === FormattedType) {
+                        const formatted: Formatted = (expression.value as any);
+                        checkSections(formatted.sections);
+                    } else if (expression instanceof FormatExpression) {
+                        checkSections(expression.sections);
+                    } else {
+                        expression.eachChild(checkExpression);
+                    }
+                };
+
+                const expr: ZoomConstantExpression<'source'> = (textValue.value as any);
+                if (expr._styleExpression) {
+                    checkExpression(expr._styleExpression.expression);
                 }
-            };
-
-            const expr: ZoomConstantExpression<'source'> = (textField.value as any);
-            if (expr._styleExpression) {
-                checkExpression(expr._styleExpression.expression);
             }
-        }
+        };
+
+        checkTextValue(layout.get('text-field'));
+        checkTextValue(layout.get('text-field2' as any));
 
         return hasOverrides;
     }
