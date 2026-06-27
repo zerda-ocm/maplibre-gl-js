@@ -84,7 +84,7 @@ export function getGlobeRadiusPixels(worldSize: number, latitudeDegrees: number)
     // This means that the pixel size of features at the map center point
     // should be the same for both globe and flat view.
     // For this reason we scale the globe up when map center is nearer to the poles.
-    return worldSize / (2.0 * Math.PI) / Math.cos(Math.PI / 180);
+    return worldSize / (2.0 * Math.PI);
 }
 
 /**
