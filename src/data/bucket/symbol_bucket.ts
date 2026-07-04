@@ -13,6 +13,7 @@ import {SymbolLayoutArray,
     PlacedSymbolArray,
     SymbolInstanceArray,
     GlyphOffsetArray,
+    GlyphRotationArray,
     SymbolLineVertexArray,
     TextAnchorOffsetArray
 } from '../array_types.g.ts';
@@ -333,6 +334,7 @@ export class SymbolBucket implements Bucket {
     iconSizeData: SizeData;
 
     glyphOffsetArray: GlyphOffsetArray;
+    glyphRotationArray: GlyphRotationArray;
     lineVertexArray: SymbolLineVertexArray;
     features: SymbolFeature[];
     symbolInstances: SymbolInstanceArray;
@@ -440,6 +442,7 @@ export class SymbolBucket implements Bucket {
         this.icon = new SymbolBuffers(new ProgramConfigurationSet(this.layers, this.zoom, property => property.startsWith('icon')));
 
         this.glyphOffsetArray = new GlyphOffsetArray();
+        this.glyphRotationArray = new GlyphRotationArray();
         this.lineVertexArray = new SymbolLineVertexArray();
         this.symbolInstances = new SymbolInstanceArray();
         this.textAnchorOffsets = new TextAnchorOffsetArray();
@@ -811,6 +814,7 @@ export class SymbolBucket implements Bucket {
             segment.primitiveLength += 2;
 
             this.glyphOffsetArray.emplaceBack(glyphOffset[0]);
+            this.glyphRotationArray.emplaceBack(quads[i].textRotationAlignmentOverride);
 
             if (i === quads.length - 1 || sectionIndex !== quads[i + 1].sectionIndex) {
                 arrays.programConfigurations.populatePaintArrays(layoutVertexArray.length, feature, feature.index, {imagePositions: {}, canonical, formattedSection: sections?.[sectionIndex]});

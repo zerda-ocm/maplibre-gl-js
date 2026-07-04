@@ -7,11 +7,13 @@ import {verticalizePunctuation} from '../util/verticalize_punctuation.ts';
 import {charIsWhitespace} from '../util/script_detection.ts';
 import {codePointAllowsIdeographicBreaking} from '../util/unicode_properties.g.ts';
 import {warnOnce} from '../util/util.ts';
+import {encodeTextRotationAlignment, type TextRotationAlignmentOverrideValue} from './text_rotation_alignment.ts';
 
 export type TextSectionOptions = {
     scale: number;
     verticalAlign: VerticalAlign;
     fontStack: string;
+    textRotationAlignmentOverride?: TextRotationAlignmentOverrideValue;
 };
 
 export type ImageSectionOptions = {
@@ -279,6 +281,7 @@ export class TaggedString {
             scale: section.scale || 1,
             verticalAlign: section.verticalAlign || 'bottom',
             fontStack: section.fontStack || defaultFontStack,
+            textRotationAlignmentOverride: encodeTextRotationAlignment((section as any).textRotationAlignment),
         });
         const index = this.sections.length - 1;
         this.sectionIndex.push(...[...section.text].map(() => index));

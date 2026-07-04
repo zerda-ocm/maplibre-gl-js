@@ -1,22 +1,22 @@
 import {
     codePointHasUprightVerticalOrientation
-} from '../util/unicode_properties.g.ts';
+} from '../util/unicode_properties.g';
 import {
     charIsWhitespace,
     charInComplexShapingScript
-} from '../util/script_detection.ts';
-import {rtlWorkerPlugin} from '../source/rtl_text_plugin_worker.ts';
-import ONE_EM from './one_em.ts';
+} from '../util/script_detection';
+import {rtlWorkerPlugin} from '../source/rtl_text_plugin_worker';
+import ONE_EM from './one_em';
 
-import {TaggedString, type TextSectionOptions, type ImageSectionOptions} from './tagged_string.ts';
-import type {StyleGlyph, GlyphMetrics} from '../style/style_glyph.ts';
-import {GLYPH_PBF_BORDER} from '../style/parse_glyph_pbf.ts';
-import {TextFit} from '../style/style_image.ts';
-import type {ImagePosition} from '../render/image_atlas.ts';
-import {IMAGE_PADDING} from '../render/image_atlas.ts';
-import type {Rect, GlyphPosition} from '../render/glyph_atlas.ts';
+import {TaggedString, type TextSectionOptions, type ImageSectionOptions} from './tagged_string';
+import type {StyleGlyph, GlyphMetrics} from '../style/style_glyph';
+import {GLYPH_PBF_BORDER} from '../style/parse_glyph_pbf';
+import {TextFit} from '../style/style_image';
+import type {ImagePosition} from '../render/image_atlas';
+import {IMAGE_PADDING} from '../render/image_atlas';
+import type {Rect, GlyphPosition} from '../render/glyph_atlas';
 import type {Formatted, VerticalAlign} from '@maplibre/maplibre-gl-style-spec';
-import type {CanonicalTileID} from '../tile/tile_id.ts';
+import {TextRotationAlignmentOverrideValue} from './text_rotation_alignment';
 
 enum WritingMode {
     none = 0,
@@ -40,6 +40,7 @@ export type PositionedGlyph = {
     sectionIndex: number;
     metrics: GlyphMetrics;
     rect: Rect | null;
+    textRotationAlignmentOverride: TextRotationAlignmentOverrideValue;
 };
 
 export type PositionedLine = {
@@ -121,8 +122,7 @@ function shapeText(
     writingMode: WritingMode.horizontal | WritingMode.vertical,
     allowVerticalPlacement: boolean,
     layoutTextSize: number,
-    layoutTextSizeThisZoom: number,
-    canonical: CanonicalTileID
+    layoutTextSizeThisZoom: number
 ): Shaping | false {
     const logicalInput = TaggedString.fromFeature(text, defaultFontStack);
 
@@ -188,13 +188,16 @@ function shapeText(
         verticalizable: false
     };
 
-    shapeLines(shaping, glyphMap, glyphPositions, imagePositions, lines, lineHeight, textAnchor, textJustify, writingMode, spacing, allowVerticalPlacement, layoutTextSizeThisZoom, canonical);
+    shapeLines(shaping, glyphMap, glyphPositions, imagePositions, lines, lineHeight, textAnchor, textJustify, writingMode, spacing, allowVerticalPlacement, layoutTextSizeThisZoom);
     if (isEmpty(positionedLines)) return false;
 
     return shaping;
 }
 
-function getAnchorAlignment(anchor: SymbolAnchor): {horizontalAlign: number; verticalAlign: number} {
+function getAnchorAlignment(anchor: SymbolAnchor): {
+    horizontalAlign: number;
+    verticalAlign: number;
+} {
     let horizontalAlign = 0.5, verticalAlign = 0.5;
 
     switch (anchor) {
@@ -307,8 +310,7 @@ function shapeLines(shaping: Shaping,
     writingMode: WritingMode.horizontal | WritingMode.vertical,
     spacing: number,
     allowVerticalPlacement: boolean,
-    layoutTextSizeThisZoom: number,
-    canonical: CanonicalTileID) {
+    layoutTextSizeThisZoom: number) {
 
     let x = 0;
     let y = 0;
@@ -354,7 +356,8 @@ function shapeLines(shaping: Shaping,
                 fontStack: '',
                 sectionIndex: line.getSectionIndex(i),
                 metrics: null,
-                rect: null
+                rect: null,
+                textRotationAlignmentOverride: 'textRotationAlignmentOverride' in section ? (section as any).textRotationAlignmentOverride : TextRotationAlignmentOverrideValue.Inherit
             };
 
             let sectionAttributes: ShapingSectionAttributes;

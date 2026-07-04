@@ -110,6 +110,10 @@ export const glyphOffset: StructArrayLayout = createLayout([
     {type: 'Float32', name: 'offsetX'}
 ]);
 
+export const glyphRotation: StructArrayLayout = createLayout([
+    {type: 'Uint16', name: 'override'}
+]);
+
 export const lineVertex: StructArrayLayout = createLayout([
     {type: 'Int16', name: 'x'},
     {type: 'Int16', name: 'y'},

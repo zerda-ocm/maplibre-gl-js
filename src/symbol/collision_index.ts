@@ -11,6 +11,7 @@ import type {IReadonlyTransform} from '../geo/transform_interface.ts';
 import type {SingleCollisionBox} from '../data/bucket/symbol_bucket.ts';
 import type {
     GlyphOffsetArray,
+    GlyphRotationArray,
     PlacedSymbol,
     SymbolLineVertexArray
 } from '../data/array_types.g.ts';
@@ -188,6 +189,7 @@ export class CollisionIndex {
         symbol: PlacedSymbol,
         lineVertexArray: SymbolLineVertexArray,
         glyphOffsetArray: GlyphOffsetArray,
+        glyphRotationArray: GlyphRotationArray,
         fontSize: number,
         unwrappedTileID: UnwrappedTileID,
         pitchedLabelPlaneMatrix: mat4,
@@ -228,6 +230,7 @@ export class CollisionIndex {
         const firstAndLastGlyph = placeFirstAndLastGlyph(
             labelPlaneFontScale,
             glyphOffsetArray,
+            glyphRotationArray,
             lineOffsetX,
             lineOffsetY,
             /*flip*/ false,

@@ -693,6 +693,7 @@ export class Placement {
                     placedSymbol,
                     bucket.lineVertexArray,
                     bucket.glyphOffsetArray,
+                    bucket.glyphRotationArray,
                     fontSize,
                     unwrappedTileID,
                     pitchedLabelPlaneMatrix,

@@ -1,7 +1,9 @@
 import {describe, test, expect} from 'vitest';
 
+import type {FormattedSection} from '@maplibre/maplibre-gl-style-spec';
 import type {StyleGlyph} from '../style/style_glyph.ts';
 import {TaggedString, type TextSectionOptions} from './tagged_string.ts';
+import {TextRotationAlignmentOverrideValue} from './text_rotation_alignment.ts';
 
 describe('TaggedString', () => {
     const textSection = {
@@ -30,6 +32,25 @@ describe('TaggedString', () => {
             tagged.trim();
             expect(tagged.text).toBe('');
             expect(tagged.sectionIndex).toHaveLength(0);
+        });
+
+        test('preserves text rotation alignment overrides for formatted sections', () => {
+            const tagged = new TaggedString();
+            const section = {
+                text: 'A',
+                image: null,
+                scale: null,
+                fontStack: null,
+                textColor: null,
+                verticalAlign: null,
+                textRotationAlignment: 'viewport-glyph'
+            } as unknown as FormattedSection;
+
+            tagged.addTextSection(section, 'Test');
+
+            expect(tagged.sections[0]).toMatchObject({
+                textRotationAlignmentOverride: TextRotationAlignmentOverrideValue.ViewportGlyph
+            });
         });
 
         test('trims whitespace around a surrogate pair', () => {
