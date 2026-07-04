@@ -56,8 +56,7 @@ import type {SizeData} from '../../symbol/symbol_size.ts';
 import type {FeatureStates} from '../../source/source_state.ts';
 import type {ImagePosition} from '../../render/image_atlas.ts';
 import type {VectorTileLayerLike} from '@maplibre/vt-pbf';
-import {Color} from '@maplibre/maplibre-gl-style-spec';
-import {namedColors} from '@maplibre/maplibre-gl-style-spec/src/expression/types/parse_css_color';
+import {applyColorSplit, defaultSplitChars} from './color_split';
 
 export type SingleCollisionBox = {
     x1: number;
@@ -504,65 +503,7 @@ export class SymbolBucket implements Bucket {
         const availableImages = options.availableImages;
         const globalProperties = new EvaluationParameters(this.zoom);
 
-        function generateSplitChars(namedColors: Record<string, [number, number, number]>): Map<string, Color> {
-            const splitChars = new Map<string, Color>();
-            let charCode = 0xE001; // Start of the Unicode Private Use Area
-
-            for (const colorName in namedColors) {
-                const rgb = namedColors[colorName];
-                const color = new Color(rgb[0] / 255, rgb[1] / 255, rgb[2] / 255, 1);
-                splitChars.set(String.fromCodePoint(charCode), color);
-                charCode++;
-            }
-
-            return splitChars;
-        }
-
-        const splitChars = generateSplitChars(namedColors);
-
-        // Optimization 2: Pre-calculate split points to avoid repeated indexOf calls
-        function getSplitPoints(text, splitChars) {
-            const splitPoints = [];
-            for (let i = 0; i < text.length; i++) {
-                if (splitChars.has(text[i])) {
-                    splitPoints.push(i);
-                }
-            }
-            return splitPoints;
-        }
-
-        const applyColorSplit = (formattedText: Formatted | void): Formatted | void => {
-            if (!formattedText) return formattedText;
-
-            const updatedSections = [];
-            for (const originalSection of formattedText.sections) {
-                const sectionText = originalSection.text;
-                const splitPoints = getSplitPoints(sectionText, splitChars);
-                if (splitPoints.length > 0) {
-                    let lastSplitIndex = 0;
-                    for (let i = 0; i < splitPoints.length; i++) {
-                        const splitPoint = splitPoints[i];
-                        updatedSections.push({
-                            ...originalSection,
-                            text: sectionText.substring(lastSplitIndex, splitPoint + 1),
-                            textColor: i === 0 ? originalSection.textColor : splitChars.get(sectionText[splitPoints[i - 1]])
-                        });
-                        lastSplitIndex = splitPoint + 1;
-                    }
-                    if (lastSplitIndex < sectionText.length) {
-                        updatedSections.push({
-                            ...originalSection,
-                            text: sectionText.substring(lastSplitIndex),
-                            textColor: splitChars.get(sectionText[splitPoints[splitPoints.length - 1]])
-                        });
-                    }
-                } else {
-                    updatedSections.push(originalSection);
-                }
-            }
-            formattedText.sections = updatedSections;
-            return formattedText;
-        };
+        const splitChars = defaultSplitChars;
 
         for (const {feature, id, index, sourceLayerIndex} of features) {
 
@@ -579,12 +520,12 @@ export class SymbolBucket implements Bucket {
                     return undefined;
                 }
                 const resolvedTokens = layer.getValueAndResolveTokens(propertyName, evaluationFeature, canonical, availableImages);
-                const formattedText = applyColorSplit(Formatted.factory(resolvedTokens));
+                const formattedText = applyColorSplit(Formatted.factory(resolvedTokens), splitChars);
                 if (!formattedText || formattedText.isEmpty()) {
                     return undefined;
                 }
 
-                const bucketHasRTLText = this.hasRTLText = (this.hasRTLText || containsRTLText(formattedText));
+                const bucketHasRTLText = this.hasRTLText ||= (containsRTLText(formattedText));
                 if (
                     !bucketHasRTLText ||
                     rtlWorkerPlugin.getRTLTextPluginStatus() === 'unavailable' ||

@@ -7,7 +7,7 @@ import {lerp} from '../../util/util.ts';
 import type {OverscaledTileID, UnwrappedTileID, CanonicalTileID} from '../../tile/tile_id.ts';
 
 import Point from '@mapbox/point-geometry';
-import type {MercatorCoordinate} from '../mercator_coordinate.ts';
+import {MercatorCoordinate} from '../mercator_coordinate';
 import type {LngLatBounds} from '../lng_lat_bounds.ts';
 import type {Frustum} from '../../util/primitives/frustum.ts';
 import type {Terrain} from '../../render/terrain.ts';
@@ -446,6 +446,19 @@ export class GlobeTransform implements ITransform {
     }
 
     screenPointToMercatorCoordinate(p: Point, terrain?: Terrain): MercatorCoordinate {
+        // When transitioning between projections, we need to interpolate the screen-to-mercator conversion
+        // to match what the shader does with u_projection_transition. Otherwise queryRenderedFeatures
+        // will not correctly identify features during the transition.
+        if (this._globeness > 0 && this._globeness < 1) {
+            const mercatorCoord = this._mercatorTransform.screenPointToMercatorCoordinate(p, terrain);
+            const verticalCoord = this._verticalPerspectiveTransform.screenPointToMercatorCoordinate(p, terrain);
+
+            return new MercatorCoordinate(
+                lerp(mercatorCoord.x, verticalCoord.x, this._globeness),
+                lerp(mercatorCoord.y, verticalCoord.y, this._globeness),
+                lerp(mercatorCoord.z, verticalCoord.z, this._globeness)
+            );
+        }
         return this.currentTransform.screenPointToMercatorCoordinate(p, terrain);
     }
 
