@@ -150,7 +150,7 @@ export function applyColorSplit(formattedText: any, splitChars: Map<string, Colo
         }
 
         // Quick check: if there are no markers, keep original section
-        if (sectionText.indexOf(RGB) === -1 && sectionText.indexOf(RGBA) === -1 && !hasNamedMarker(sectionText, splitChars)) {
+        if (!containsColorMarker(sectionText, splitChars)) {
             updatedSections.push(originalSection);
             continue;
         }
@@ -205,4 +205,12 @@ export function applyColorSplit(formattedText: any, splitChars: Map<string, Colo
 
 function escapeRegExp(s: string) {
     return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+export function containsColorMarker(text: string, splitChars: Map<string, Color> = defaultSplitChars): boolean {
+    if (!text) return false;
+    if (text.includes(RGB_MARKER) || text.includes(RGBA_MARKER)) {
+        return true;
+    }
+    return hasNamedMarker(text, splitChars);
 }
