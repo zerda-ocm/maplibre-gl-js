@@ -36,6 +36,7 @@ import {
     placement,
     symbolInstance,
     glyphOffset,
+    glyphCharacter,
     glyphRotation,
     lineVertex,
     textAnchorOffset
@@ -164,6 +165,7 @@ createStructArrayType('quad_triangle', quadTriangle);
 createStructArrayType('placed_symbol', placement, true);
 createStructArrayType('symbol_instance', symbolInstance, true);
 createStructArrayType('glyph_offset', glyphOffset, true);
+createStructArrayType('glyph_character', glyphCharacter, true);
 createStructArrayType('glyph_rotation', glyphRotation, true);
 createStructArrayType('symbol_line_vertex', lineVertex, true);
 createStructArrayType('text_anchor_offset', textAnchorOffset, true);
@@ -348,7 +350,7 @@ function emitStructArray(locals) {
     }
 
     // exceptions for which we generate accessors on the array rather than a separate struct for performance
-    const useComponentGetters = structArrayClass === 'GlyphOffsetArray' || structArrayClass === 'GlyphRotationArray' || structArrayClass === 'SymbolLineVertexArray';
+    const useComponentGetters = structArrayClass === 'GlyphOffsetArray' || structArrayClass === 'GlyphRotationArray' || structArrayClass === 'GlyphCharacterArray' || structArrayClass === 'SymbolLineVertexArray';
 
     if (includeStructAccessors && !useComponentGetters) {
         output.push(

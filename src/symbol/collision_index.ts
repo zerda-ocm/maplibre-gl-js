@@ -12,14 +12,19 @@ import type {SingleCollisionBox} from '../data/bucket/symbol_bucket.ts';
 import type {
     GlyphOffsetArray,
     GlyphRotationArray,
+    GlyphCharacterArray,
     PlacedSymbol,
     SymbolLineVertexArray
 } from '../data/array_types.g.ts';
 import type {OverlapMode} from '../style/style_layer/overlap_mode.ts';
 import {type OverscaledTileID, type UnwrappedTileID} from '../tile/tile_id.ts';
-import {type PointProjection, type SymbolProjectionContext, getTileSkewVectors, pathSlicedToLongestUnoccluded, placeFirstAndLastGlyph, projectPathSpecialProjection, xyTransformMat4} from '../symbol/projection.ts';
+import {type PointProjection, type SymbolProjectionContext, getTileSkewVectors, pathSlicedToLongestUnoccluded, placeFirstAndLastGlyph, placeGlyphAlongLine, projectPathSpecialProjection, xyTransformMat4} from '../symbol/projection';
+import type {TextRotationAlignmentOverrideValue} from './text_rotation_alignment';
+import {shouldRotateGlyphToLine} from './text_rotation_alignment';
+import {WritingMode} from './shaping';
 import {clamp, getAABB} from '../util/util.ts';
 import {Bounds} from '../geo/bounds.ts';
+import { queryRenderedSymbols } from '../source/query_features.ts';
 
 // When a symbol crosses the edge that causes it to be included in
 // collision detection, it will cause changes in the symbols around
@@ -29,10 +34,29 @@ import {Bounds} from '../geo/bounds.ts';
 // stability, but it's expensive.
 export const viewportPadding = 100;
 
+const SPECIAL_GLYPH_WIDTHS = new Map<number, number>([
+    ['\ue137'.codePointAt(0)!, 2]
+]);
+const SPECIAL_GLYPH_CODES = new Set<number>(['w', 'n', 's', '\ue137'].map(ch => ch.codePointAt(0)!));
+
+const getGlyphWidthMultiplier = (glyphCode: number) => {
+    return SPECIAL_GLYPH_WIDTHS.get(glyphCode) ?? 1;
+};
+
+type GlyphCircleHitMeta = {
+    circleIndex: number;
+    glyphArrayIndex: number;
+    glyphCharCode: number;
+    specialIndex: number;
+    widthMultiplier: number;
+};
+
 export type PlacedCircles = {
     circles: number[];
+    ellipseFlags: number[];
     offscreen: boolean;
     collisionDetected: boolean;
+    glyphHits: GlyphCircleHitMeta[];
 };
 
 export type PlacedBox = {
@@ -47,6 +71,18 @@ export type FeatureKey = {
     featureIndex: number;
     collisionGroupID: number;
     overlapMode: OverlapMode;
+    collisionCircleIndex?: number;
+    glyphArrayIndex?: number;
+    glyphCharCode?: number;
+    glyphWidthMultiplier?: number;
+};
+
+export type SymbolQueryMatch = {
+    featureIndex: number;
+    collisionCircleIndex?: number;
+    glyphArrayIndex?: number;
+    glyphCharCode?: number;
+    glyphWidthMultiplier?: number;
 };
 
 type ProjectedBox = {
@@ -190,11 +226,14 @@ export class CollisionIndex {
         lineVertexArray: SymbolLineVertexArray,
         glyphOffsetArray: GlyphOffsetArray,
         glyphRotationArray: GlyphRotationArray,
+        glyphCharacterArray: GlyphCharacterArray,
         fontSize: number,
         unwrappedTileID: UnwrappedTileID,
         pitchedLabelPlaneMatrix: mat4,
         showCollisionCircles: boolean,
         pitchWithMap: boolean,
+        rotateToLine: boolean,
+        keepUpright: boolean,
         collisionGroupPredicate: (key: FeatureKey) => boolean,
         circlePixelDiameter: number,
         textPixelPadding: number,
@@ -202,6 +241,8 @@ export class CollisionIndex {
         getElevation: (x: number, y: number) => number
     ): PlacedCircles {
         const placedCollisionCircles = [];
+        const ellipseFlags: number[] = [];
+        const glyphHits: GlyphCircleHitMeta[] = [];
 
         const tileUnitAnchorPoint = new Point(symbol.anchorX, symbol.anchorY);
         const perspectiveRatio = this.getPerspectiveRatio(tileUnitAnchorPoint.x, tileUnitAnchorPoint.y, unwrappedTileID, getElevation);
@@ -235,7 +276,7 @@ export class CollisionIndex {
             lineOffsetY,
             /*flip*/ false,
             symbol,
-            false,
+            rotateToLine,
             projectionContext,
             unwrappedTileID);
 
@@ -243,8 +284,61 @@ export class CollisionIndex {
         let inGrid = false;
         let entirelyOffscreen = true;
 
+        const aspectRatio = this.transform.width / this.transform.height;
+        const pitchedLabelPlaneMatrixInverse = pitchWithMap ? mat4.invert(mat4.create(), pitchedLabelPlaneMatrix) : null;
+
+        const projectLabelPointToClip = (point: Point) => {
+            if (pitchWithMap) {
+                if (!pitchedLabelPlaneMatrixInverse) {
+                    return new Point(0, 0);
+                }
+                const pos = vec4.fromValues(point.x, point.y, 0, 1);
+                vec4.transformMat4(pos, pos, pitchedLabelPlaneMatrixInverse);
+                const projected = this.transform.projectTileCoordinates(pos[0] / pos[3], pos[1] / pos[3], unwrappedTileID, getElevation);
+                return projected.point;
+            }
+
+            return new Point(
+                (point.x / this.transform.width) * 2.0 - 1.0,
+                1.0 - (point.y / this.transform.height) * 2.0
+            );
+        };
+
+        let glyphFlip = false;
+        let canPlaceGlyphCircles = true;
+
+        const updateCoverage = (centerX: number, centerY: number, radiusValue: number, widthMultiplier = 1) => {
+            const radiusX = radiusValue * widthMultiplier;
+            const radiusY = radiusValue;
+            const x1 = centerX - radiusX;
+            const y1 = centerY - radiusY;
+            const x2 = centerX + radiusX;
+            const y2 = centerY + radiusY;
+            entirelyOffscreen = entirelyOffscreen && this.isOffscreen(x1, y1, x2, y2);
+            inGrid = inGrid || this.isInsideGrid(x1, y1, x2, y2);
+        };
+
         if (firstAndLastGlyph) {
-            const radius = circlePixelDiameter * 0.5 * perspectiveRatio + textPixelPadding;
+            if (keepUpright) {
+                const firstClip = projectLabelPointToClip(firstAndLastGlyph.first.point);
+                const lastClip = projectLabelPointToClip(firstAndLastGlyph.last.point);
+
+                if (symbol.writingMode === WritingMode.horizontal) {
+                    const rise = Math.abs(lastClip.y - firstClip.y);
+                    const run = Math.abs(lastClip.x - firstClip.x) * aspectRatio;
+                    if (rise > run) {
+                        canPlaceGlyphCircles = false;
+                    }
+                }
+
+                if (canPlaceGlyphCircles) {
+                    const needsFlip = symbol.writingMode === WritingMode.vertical ?
+                        firstClip.y < lastClip.y :
+                        firstClip.x > lastClip.x;
+                    glyphFlip = needsFlip;
+                }
+            }
+            const radius = circlePixelDiameter * 0.25 * perspectiveRatio + textPixelPadding;
             const screenPlaneMin = new Point(-viewportPadding, -viewportPadding);
             const screenPlaneMax = new Point(this.screenRightBoundary, this.screenBottomBoundary);
             const interpolator = new PathInterpolator();
@@ -324,7 +418,9 @@ export class CollisionIndex {
                     const centerX = circlePosition.x + viewportPadding;
                     const centerY = circlePosition.y + viewportPadding;
 
-                    placedCollisionCircles.push(centerX, centerY, radius, 0);
+                    updateCoverage(centerX, centerY, radius);
+
+                    let collided = false;
 
                     const x1 = centerX - radius;
                     const y1 = centerY - radius;
@@ -341,19 +437,96 @@ export class CollisionIndex {
                         if (!showCollisionCircles) {
                             return {
                                 circles: [],
+                                ellipseFlags: [],
                                 offscreen: false,
-                                collisionDetected
+                                collisionDetected,
+                                glyphHits: []
                             };
                         }
                     }
+
+                    placedCollisionCircles.push(centerX, centerY, radius, collided ? 1 : 0);
+                    ellipseFlags.push(0);
+                }
+            }
+
+            if (symbol.numGlyphs > 0 && symbol.lineLength > 0 && canPlaceGlyphCircles) {
+                const glyphStartIndex = symbol.glyphStartIndex;
+                const glyphEndIndex = glyphStartIndex + symbol.numGlyphs;
+                const lineStartIndex = symbol.lineStartIndex;
+                const lineEndIndex = lineStartIndex + symbol.lineLength;
+                const glyphLabelPlanePoints: Array<{point: Point; glyphIndex: number; glyphCharCode: number}> = [];
+
+                for (let glyphIndex = glyphStartIndex; glyphIndex < glyphEndIndex; glyphIndex++) {
+                    const glyphCharCode = glyphCharacterArray.getchar(glyphIndex);
+                    if (!SPECIAL_GLYPH_CODES.has(glyphCharCode)) {
+                        continue;
+                    }
+                    const glyphOffset = glyphOffsetArray.getoffsetX(glyphIndex);
+                    const glyphOverride = glyphRotationArray.getoverride(glyphIndex) as TextRotationAlignmentOverrideValue;
+                    const rotateGlyphToLine = shouldRotateGlyphToLine(glyphOverride, rotateToLine);
+                    const placedGlyph = placeGlyphAlongLine(
+                        labelPlaneFontScale * glyphOffset,
+                        lineOffsetX,
+                        lineOffsetY,
+                        glyphFlip,
+                        symbol.segment,
+                        lineStartIndex,
+                        lineEndIndex,
+                        projectionContext,
+                        rotateGlyphToLine,
+                        glyphOverride,
+                        unwrappedTileID
+                    );
+
+                    if (!placedGlyph) {
+                        continue;
+                    }
+
+                    glyphLabelPlanePoints.push({point: placedGlyph.point, glyphIndex, glyphCharCode});
+                }
+
+                let glyphProjections: Array<PointProjection> | null = null;
+                if (pitchWithMap && glyphLabelPlanePoints.length > 0) {
+                    const glyphPoints = glyphLabelPlanePoints.map(item => item.point);
+                    glyphProjections = projectPathSpecialProjection(glyphPoints, projectionContext);
+                }
+
+                let specialCircleIndex = 0;
+                for (let i = 0; i < glyphLabelPlanePoints.length; i++) {
+                    const glyphInfo = glyphLabelPlanePoints[i];
+                    const widthMultiplier = getGlyphWidthMultiplier(glyphInfo.glyphCharCode);
+                    let glyphPoint = glyphInfo.point;
+                    if (pitchWithMap) {
+                        const projection = glyphProjections?.[i];
+                        if (!projection || projection.isOccluded) {
+                            continue;
+                        }
+                        glyphPoint = projection.point;
+                    }
+
+                    const centerX = glyphPoint.x + viewportPadding;
+                    const centerY = glyphPoint.y + viewportPadding;
+
+                    updateCoverage(centerX, centerY, radius, widthMultiplier);
+                    placedCollisionCircles.push(centerX, centerY, radius, 2);
+                    ellipseFlags.push(widthMultiplier !== 1 ? widthMultiplier : 0);
+                    const circleIndex = placedCollisionCircles.length / 4 - 1;
+                    glyphHits.push({circleIndex, glyphArrayIndex: glyphInfo.glyphIndex, glyphCharCode: glyphInfo.glyphCharCode, specialIndex: specialCircleIndex, widthMultiplier});
+                    specialCircleIndex++;
                 }
             }
         }
 
+        const circles = ((!showCollisionCircles && collisionDetected) || !inGrid || perspectiveRatio < this.perspectiveRatioCutoff)
+            ? []
+            : placedCollisionCircles;
         return {
             circles: ((!showCollisionCircles && collisionDetected) || !inGrid || perspectiveRatio < this.perspectiveRatioCutoff) ? [] : placedCollisionCircles,
+            ellipseFlags: circles.length ? ellipseFlags : [],
             offscreen: entirelyOffscreen,
-            collisionDetected
+            collisionDetected,
+            glyphHits
         };
     }
 
@@ -370,7 +543,7 @@ export class CollisionIndex {
      * symbols on the map, we use the CollisionIndex to look up the symbol part of
      * `queryRenderedFeatures`.
      */
-    queryRenderedSymbols(viewportQueryGeometry: Point[]): Record<number, number[]> {
+    queryRenderedSymbols(viewportQueryGeometry: Point[]): Record<number, SymbolQueryMatch[]> {
         if (viewportQueryGeometry.length === 0 || (this.grid.keysLength() === 0 && this.ignoredGrid.keysLength() === 0)) {
             return {};
         }
@@ -387,18 +560,25 @@ export class CollisionIndex {
         const features = this.grid.query(minX, minY, maxX, maxY)
             .concat(this.ignoredGrid.query(minX, minY, maxX, maxY));
 
-        const seenFeatures = {};
-        const result = {};
+        const seenFeatures: {
+            [bucketId: number]: {
+                boxes: {[featureIndex: number]: boolean};
+                circles: {[featureIndex: number]: {[circleIndex: number]: boolean}};
+            };
+        } = {};
+        const result: {[bucketInstanceId: number]: SymbolQueryMatch[]} = {};
 
         for (const feature of features) {
             const featureKey = feature.key;
-            // Skip already seen features.
-            if (seenFeatures[featureKey.bucketInstanceId] === undefined) {
-                seenFeatures[featureKey.bucketInstanceId] = {};
-            }
-            if (seenFeatures[featureKey.bucketInstanceId][featureKey.featureIndex]) {
+            if (!featureKey) {
                 continue;
             }
+            // Skip already seen features.
+            const bucketId = featureKey.bucketInstanceId;
+            if (seenFeatures[bucketId] === undefined) {
+                seenFeatures[bucketId] = {boxes: {}, circles: {}};
+            }
+            const bucketSeen = seenFeatures[bucketId];
 
             // Check if query intersects with the feature box
             // "Collision Circles" for line labels are treated as boxes here
@@ -415,11 +595,38 @@ export class CollisionIndex {
                 continue;
             }
 
-            seenFeatures[featureKey.bucketInstanceId][featureKey.featureIndex] = true;
-            if (result[featureKey.bucketInstanceId] === undefined) {
-                result[featureKey.bucketInstanceId] = [];
+            const hasCircleIndex = featureKey.collisionCircleIndex !== undefined;
+            if (hasCircleIndex) {
+                bucketSeen.circles[featureKey.featureIndex] ||= {};
+                const seenCircleIndexes = bucketSeen.circles[featureKey.featureIndex];
+                if (seenCircleIndexes[featureKey.collisionCircleIndex]) {
+                    continue;
+                }
+                seenCircleIndexes[featureKey.collisionCircleIndex] = true;
+            } else {
+                if (bucketSeen.boxes[featureKey.featureIndex]) {
+                    continue;
+                }
+                bucketSeen.boxes[featureKey.featureIndex] = true;
             }
-            result[featureKey.bucketInstanceId].push(featureKey.featureIndex);
+
+            if (result[bucketId] === undefined) {
+                result[bucketId] = [];
+            }
+            const entry: SymbolQueryMatch = {featureIndex: featureKey.featureIndex};
+            if (hasCircleIndex) {
+                entry.collisionCircleIndex = featureKey.collisionCircleIndex;
+                if (featureKey.glyphArrayIndex !== undefined) {
+                    entry.glyphArrayIndex = featureKey.glyphArrayIndex;
+                }
+                if (featureKey.glyphCharCode !== undefined) {
+                    entry.glyphCharCode = featureKey.glyphCharCode;
+                }
+                if (featureKey.glyphWidthMultiplier !== undefined) {
+                    entry.glyphWidthMultiplier = featureKey.glyphWidthMultiplier;
+                }
+            }
+            result[bucketId].push(entry);
         }
 
         return result;
@@ -432,12 +639,38 @@ export class CollisionIndex {
         grid.insert(key, collisionBox[0], collisionBox[1], collisionBox[2], collisionBox[3]);
     }
 
-    insertCollisionCircles(collisionCircles: number[], overlapMode: OverlapMode, ignorePlacement: boolean, bucketInstanceId: number, featureIndex: number, collisionGroupID: number): void {
+    insertCollisionCircles(placedCircles: PlacedCircles, overlapMode: OverlapMode, ignorePlacement: boolean, bucketInstanceId: number, featureIndex: number, collisionGroupID: number): void {
+        if (!placedCircles || placedCircles.circles.length === 0) {
+            return;
+        }
         const grid = ignorePlacement ? this.ignoredGrid : this.grid;
 
-        const key = {bucketInstanceId, featureIndex, collisionGroupID, overlapMode};
-        for (let k = 0; k < collisionCircles.length; k += 4) {
-            grid.insertCircle(key, collisionCircles[k], collisionCircles[k + 1], collisionCircles[k + 2]);
+        const circles = placedCircles.circles;
+        const glyphHitMap = new Map<number, GlyphCircleHitMeta>();
+        for (const hit of placedCircles.glyphHits || []) {
+            glyphHitMap.set(hit.circleIndex, hit);
+        }
+
+        const baseKey = {bucketInstanceId, featureIndex, collisionGroupID, overlapMode};
+        for (let k = 0, circleIndex = 0; k < circles.length; k += 4, circleIndex++) {
+            const hit = glyphHitMap.get(circleIndex);
+            const key: FeatureKey = {...baseKey};
+            const centerX = circles[k];
+            const centerY = circles[k + 1];
+            const radius = circles[k + 2];
+            if (hit) {
+                key.collisionCircleIndex = hit.specialIndex;
+                key.glyphArrayIndex = hit.glyphArrayIndex;
+                key.glyphCharCode = hit.glyphCharCode;
+                const widthMultiplier = hit.widthMultiplier;
+                if (widthMultiplier !== 1) {
+                    key.glyphWidthMultiplier = widthMultiplier;
+                    const radiusX = radius * widthMultiplier;
+                    grid.insert(key, centerX - radiusX, centerY - radius, centerX + radiusX, centerY + radius);
+                    continue;
+                }
+            }
+            grid.insertCircle(key, centerX, centerY, radius);
         }
     }
 

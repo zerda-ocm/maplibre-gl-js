@@ -114,6 +114,10 @@ export const glyphRotation: StructArrayLayout = createLayout([
     {type: 'Uint16', name: 'override'}
 ]);
 
+export const glyphCharacter: StructArrayLayout = createLayout([
+    {type: 'Uint32', name: 'char'}
+]);
+
 export const lineVertex: StructArrayLayout = createLayout([
     {type: 'Int16', name: 'x'},
     {type: 'Int16', name: 'y'},
