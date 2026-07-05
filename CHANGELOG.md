@@ -1,10 +1,34 @@
 ## main
 ### ✨ Features and improvements
-- ⚠️ All map events are now real classes that are instantiated when they are fired. Renamed `MapLibreZoomEvent` to `MapBoxZoomEvent`, added the `rollstart`/`roll`/`rollend` and `style.load` (as `MapStyleLoadEvent`) events to `MapEventType`, and added event classes and type-map for `Marker`, `Popup`, `GeolocateControl` and `FullscreenControl`. Removed `MapDataEvent`: the `data`/`dataloading`/`dataabort` events are now `MapSourceDataEvent | MapStyleDataEvent`, so source data events carry the full source info (`sourceId`, `tile`, `sourceDataType`, …). Added `MapMovementEvent` as the type for all camera-transition events (`move`/`zoom`/`rotate`/`pitch`/`roll`/`drag` and their `start`/`end` variants). `Evented` is now generic over an event-type map (`Evented<EventType>`) and is `abstract`, so subclasses get strongly-typed `on`/`once`/`off` automatically without re-declaring overloads — this also types the events on `Camera`/`Style` (via `MapEventType`) and on the sources (via the new `SourceEventType`) ([#7789](https://github.com/maplibre/maplibre-gl-js/pull/7789)) (by [@HarelM](https://github.com/HarelM))
+- Drop the archived `@mapbox/whoots-js` dependency by inlining its single `getTileBBox` helper ([#7838](https://github.com/maplibre/maplibre-gl-js/pull/7838)) (by [@qorexdevs](https://github.com/qorexdevs))
+- Debounce `setImages` broadcast to once per animation frame, fixing O(n²) serialization overhead when adding many images ([#7614](https://github.com/maplibre/maplibre-gl-js/pull/7614)) (by [@bradymadden97](https://github.com/bradymadden97))
 - _...Add new stuff here..._
 
 ### 🐞 Bug fixes
+- Fix stale terrain depth and coordinate framebuffers when terrain tiles change without camera movement ([#7812](https://github.com/maplibre/maplibre-gl-js/pull/7812)) (by [@DoFabien](https://github.com/DoFabien))
 - _...Add new stuff here..._
+
+## 6.0.0-18
+
+### ✨ Features and improvements
+
+- Improve terrain rendering performance by avoiding unnecessary terrain data lookups during Mercator render-to-texture passes ([#7833](https://github.com/maplibre/maplibre-gl-js/pull/7833)) (by [@DoFabien](https://github.com/DoFabien))
+- Reduce allocation pressure while constructing DEM data and sampling terrain elevations ([#7814](https://github.com/maplibre/maplibre-gl-js/pull/7814)) (by [@DoFabien](https://github.com/DoFabien))
+- Reuse terrain DEM texture when preparing terrain ([#7813](https://github.com/maplibre/maplibre-gl-js/pull/7813)) (by [@DoFabien](https://github.com/DoFabien))
+
+### 🐞 Bug fixes
+
+- Fix a memory leak where aborting a worker request (e.g. a GeoJSON tile load cancelled while panning) left its promise pending forever, so the awaiting async frame and everything it captured was never released; `Actor.sendAsync` now rejects with an `AbortError` on abort ([#7826](https://github.com/maplibre/maplibre-gl-js/pull/7826)) (by [@kamil-sienkiewicz-asi](https://github.com/kamil-sienkiewicz-asi))
+
+## 6.0.0-17
+
+### ✨ Features and improvements
+
+- ⚠️ All map events are now real classes that are instantiated when they are fired. Renamed `MapLibreZoomEvent` to `MapBoxZoomEvent`, added the `rollstart`/`roll`/`rollend` and `style.load` (as `MapStyleLoadEvent`) events to `MapEventType`, and added event classes and type-map for `Marker`, `Popup`, `GeolocateControl` and `FullscreenControl`. Removed `MapDataEvent`: the `data`/`dataloading`/`dataabort` events are now `MapSourceDataEvent | MapStyleDataEvent`, so source data events carry the full source info (`sourceId`, `tile`, `sourceDataType`, …). Added `MapMovementEvent` as the type for all camera-transition events (`move`/`zoom`/`rotate`/`pitch`/`roll`/`drag` and their `start`/`end` variants). `Evented` is now generic over an event-type map (`Evented<EventType>`) and is `abstract`, so subclasses get strongly-typed `on`/`once`/`off` automatically without re-declaring overloads — this also types the events on `Camera`/`Style` (via `MapEventType`) and on the sources (via the new `SourceEventType`) ([#7789](https://github.com/maplibre/maplibre-gl-js/pull/7789)) (by [@HarelM](https://github.com/HarelM))
+
+### 🐞 Bug fixes
+
+- Skip `undefined` properties during worker serialization ([#7801](https://github.com/maplibre/maplibre-gl-js/pull/7801)) (by [@xavierjs](https://github.com/xavierjs))
 
 ## 6.0.0-16
 
