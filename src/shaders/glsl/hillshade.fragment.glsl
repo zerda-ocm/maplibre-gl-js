@@ -173,6 +173,11 @@ void main() {
         standard_hillshade(deriv);
     }
 
+    // Normalizing the elevation and applying bathymetric darkening
+    float elevation = 1.0 - pixel.b;
+    float darkeningFactor = clamp(elevation * 0.5, 0.0, 1.0);
+    fragColor = mix(fragColor, vec4(0.0, 0.13, 0.7, 1.0), vec4(darkeningFactor));
+
 #ifdef OVERDRAW_INSPECTOR
     fragColor = vec4(1.0);
 #endif
