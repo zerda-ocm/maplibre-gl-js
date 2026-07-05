@@ -1925,25 +1925,25 @@ function ensureError(e) {
 * Returns a new 64 bit float vec4 of zeroes.
 */
 function createVec4f64() {
-	return new Float64Array(4);
+	return /* @__PURE__ */ new Float64Array(4);
 }
 /**
 * Returns a new 64 bit float vec3 of zeroes.
 */
 function createVec3f64() {
-	return new Float64Array(3);
+	return /* @__PURE__ */ new Float64Array(3);
 }
 /**
 * Returns a new 64 bit float mat4 of zeroes.
 */
 function createMat4f64() {
-	return new Float64Array(16);
+	return /* @__PURE__ */ new Float64Array(16);
 }
 /**
 * Returns a new 64 bit float mat4 set to identity.
 */
 function createIdentityMat4f64() {
-	const m = new Float64Array(16);
+	const m = /* @__PURE__ */ new Float64Array(16);
 	identity(m);
 	return m;
 }
@@ -1951,7 +1951,7 @@ function createIdentityMat4f64() {
 * Returns a new 32 bit float mat4 set to identity.
 */
 function createIdentityMat4f32() {
-	const m = new Float32Array(16);
+	const m = /* @__PURE__ */ new Float32Array(16);
 	identity(m);
 	return m;
 }
@@ -2599,7 +2599,7 @@ function rollPitchBearingEqual(a, b) {
 * @returns roll, pitch, and bearing angles in degrees
 */
 function getRollPitchBearing(rotation) {
-	const m = new Float64Array(9);
+	const m = /* @__PURE__ */ new Float64Array(9);
 	fromQuat(m, rotation);
 	const xAngle = radiansToDegrees(-Math.asin(clamp$2(m[2], -1, 1)));
 	let roll;
@@ -2631,7 +2631,7 @@ function getAngleDelta(lastPoint, currentPoint, center) {
 * @returns The rotation quaternion
 */
 function rollPitchBearingToQuat(roll, pitch, bearing) {
-	const rotation = new Float64Array(4);
+	const rotation = /* @__PURE__ */ new Float64Array(4);
 	fromEuler(rotation, roll, pitch - 90, bearing);
 	return rotation;
 }
@@ -2915,33 +2915,6 @@ var MercatorCoordinate = class MercatorCoordinate {
 		return 1 / earthCircumference * mercatorScale(latFromMercatorY$1(this.y));
 	}
 };
-//#endregion
-//#region node_modules/@mapbox/whoots-js/index.mjs
-/**
-* getTileBBox
-*
-* @param    {Number}  x  Tile coordinate x
-* @param    {Number}  y  Tile coordinate y
-* @param    {Number}  z  Tile zoom
-* @returns  {String}  String of the bounding box
-*/
-function getTileBBox(x, y, z) {
-	y = Math.pow(2, z) - y - 1;
-	var min = getMercCoords(x * 256, y * 256, z), max = getMercCoords((x + 1) * 256, (y + 1) * 256, z);
-	return min[0] + "," + min[1] + "," + max[0] + "," + max[1];
-}
-/**
-* getMercCoords
-*
-* @param    {Number}  x  Pixel coordinate x
-* @param    {Number}  y  Pixel coordinate y
-* @param    {Number}  z  Tile zoom
-* @returns  {Array}   [x, y]
-*/
-function getMercCoords(x, y, z) {
-	var resolution = 2 * Math.PI * 6378137 / 256 / Math.pow(2, z);
-	return [x * resolution - 2 * Math.PI * 6378137 / 2, y * resolution - 2 * Math.PI * 6378137 / 2];
-}
 //#endregion
 //#region src/util/transferable_grid_index.ts
 const NUM_PARAMS = 3;
@@ -7538,7 +7511,7 @@ var RuntimeError = class extends Error {
 	}
 };
 /** Set of valid anchor positions, as a set for validation */
-const anchors = new Set([
+const anchors = /* @__PURE__ */ new Set([
 	"center",
 	"left",
 	"right",
@@ -10010,7 +9983,7 @@ function rgba(ctx, [r, g, b, a]) {
 	return new Color(r / 255, g / 255, b / 255, alpha, false);
 }
 function has(key, obj) {
-	return key in obj;
+	return key in obj && obj[key] !== void 0;
 }
 function get(key, obj) {
 	const v = obj[key];
@@ -10351,7 +10324,11 @@ CompoundExpression.register(expressions, {
 	"filter-has": [
 		BooleanType,
 		[ValueType],
-		(ctx, [k]) => k.value in ctx.properties()
+		(ctx, [k]) => {
+			const key = k.value;
+			const props = ctx.properties();
+			return key in props && props[key] !== void 0;
+		}
 	],
 	"filter-has-id": [
 		BooleanType,
@@ -10990,6 +10967,7 @@ function isExpressionFilter(filter) {
 	}
 }
 function getFilterPropertyExpression(property) {
+	if (property === "$type") return ["geometry-type"];
 	if (property === "$id") return ["id"];
 	return ["get", property];
 }
@@ -11002,11 +10980,6 @@ function getLegacyFilterExpressionSuggestion(filter) {
 		case ">":
 		case ">=":
 			if (filter.length !== 3 || typeof filter[1] !== "string") return null;
-			if (filter[1] === "$type") return [filter[0], [
-				"in",
-				["geometry-type"],
-				["literal", [filter[2], `Multi${filter[2]}`]]
-			]];
 			return [
 				filter[0],
 				getFilterPropertyExpression(filter[1]),
@@ -11015,15 +10988,10 @@ function getLegacyFilterExpressionSuggestion(filter) {
 		case "in":
 		case "!in": {
 			if (filter.length < 2 || typeof filter[1] !== "string") return null;
-			let expression = [
+			const expression = [
 				"in",
 				getFilterPropertyExpression(filter[1]),
 				["literal", filter.slice(2)]
-			];
-			if (filter[1] === "$type") expression = [
-				"in",
-				["geometry-type"],
-				["literal", filter.slice(2).map((g) => [g, `Multi${g}`]).flat()]
 			];
 			return filter[0] === "!in" ? ["!", expression] : expression;
 		}
@@ -12915,6 +12883,7 @@ function serialize(input, transferables) {
 			if (!input.hasOwnProperty(key)) continue;
 			if (registry[classRegistryKey].omit.includes(key)) continue;
 			const property = input[key];
+			if (property === void 0) continue;
 			properties[key] = registry[classRegistryKey].shallow.includes(key) ? property : serialize(property, transferables);
 		}
 		if (input instanceof Error) properties.message = input.message;
@@ -13156,6 +13125,24 @@ function calculateTileKey(wrap, overscaledZ, z, x, y) {
 	if (wrap < 0) wrap = wrap * -1 - 1;
 	const dim = 1 << z;
 	return (dim * dim * wrap + dim * y + x).toString(36) + z.toString(36) + overscaledZ.toString(36);
+}
+const EPSG3857_HALF_CIRCUMFERENCE = Math.PI * 6378137;
+/**
+* Builds the `{bbox-epsg-3857}` token used in WMS tile URLs: the tile's bounding
+* box in EPSG:3857 meters as a `minX,minY,maxX,maxY` string.
+*
+* Inlined from the archived \@mapbox/whoots-js (ISC, Copyright (c) 2017 Mapbox).
+*/
+function getTileBBox(x, y, z) {
+	y = Math.pow(2, z) - y - 1;
+	const min = getEpsg3857Coords(x * 256, y * 256, z);
+	const max = getEpsg3857Coords((x + 1) * 256, (y + 1) * 256, z);
+	return `${min[0]},${min[1]},${max[0]},${max[1]}`;
+}
+/** Projects tile pixel coordinates to EPSG:3857 meters. */
+function getEpsg3857Coords(x, y, z) {
+	const resolution = 2 * EPSG3857_HALF_CIRCUMFERENCE / 256 / Math.pow(2, z);
+	return [x * resolution - EPSG3857_HALF_CIRCUMFERENCE, y * resolution - EPSG3857_HALF_CIRCUMFERENCE];
 }
 function getQuadkey(z, x, y) {
 	let quadkey = "";
@@ -13514,7 +13501,7 @@ var Benchmark = class {
 		map._render(paintStartTimeStamp);
 		const gl = map.painter.context.gl;
 		gl.finish();
-		gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
+		gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, /* @__PURE__ */ new Uint8Array(4));
 	}
 };
 //#endregion
@@ -17180,7 +17167,7 @@ var UniformFloatArray = class extends Uniform {
 		}
 	}
 };
-const emptyMat4 = new Float32Array(16);
+const emptyMat4 = /* @__PURE__ */ new Float32Array(16);
 var UniformMatrix4f = class extends Uniform {
 	constructor(context, location) {
 		super(context, location);
@@ -18551,7 +18538,10 @@ var Texture = class {
 * surrounding pixel values to compute the slope at that pixel, and we cannot accurately calculate the slope at pixels on a
 * tile's edge without backfilling from neighboring tiles.
 */
-var DEMData = class {
+var DEMData = class DEMData {
+	static {
+		this.byteViewCache = /* @__PURE__ */ new WeakMap();
+	}
 	/**
 	* Constructs a `DEMData` object
 	* @param uid - the tile's unique id
@@ -18577,6 +18567,7 @@ var DEMData = class {
 		this.stride = data.height;
 		const dim = this.dim = data.height - 2;
 		this.data = new Uint32Array(data.data.buffer);
+		DEMData.byteViewCache.set(this, new Uint8Array(this.data.buffer));
 		switch (encoding) {
 			case "terrarium":
 				this.redFactor = 256;
@@ -18607,18 +18598,35 @@ var DEMData = class {
 		this.data[this._idx(dim, -1)] = this.data[this._idx(dim - 1, 0)];
 		this.data[this._idx(-1, dim)] = this.data[this._idx(0, dim - 1)];
 		this.data[this._idx(dim, dim)] = this.data[this._idx(dim - 1, dim - 1)];
+		const pixels = this._getByteView();
 		this.min = Number.MAX_SAFE_INTEGER;
 		this.max = Number.MIN_SAFE_INTEGER;
 		for (let x = 0; x < dim; x++) for (let y = 0; y < dim; y++) {
-			const ele = this.get(x, y);
+			const index = this._idx(x, y) * 4;
+			const ele = this._unpackAtIndex(pixels, index);
 			if (ele > this.max) this.max = ele;
 			if (ele < this.min) this.min = ele;
 		}
 	}
 	get(x, y) {
-		const pixels = new Uint8Array(this.data.buffer);
+		const pixels = this._getByteView();
 		const index = this._idx(x, y) * 4;
-		return this.unpack(pixels[index], pixels[index + 1], pixels[index + 2]);
+		return this._unpackAtIndex(pixels, index);
+	}
+	sampleBilinear(x, y) {
+		const cx = Math.floor(x);
+		const cy = Math.floor(y);
+		if (cx < -1 || cx >= this.dim || cy < -1 || cy >= this.dim) throw new RangeError(`Out of range source coordinates for DEM data. x: ${x}, y: ${y}, dim: ${this.dim}`);
+		const pixels = this._getByteView();
+		const index = ((cy + 1) * this.stride + cx + 1) * 4;
+		const strideByteWidth = this.stride * 4;
+		const tx = x - cx;
+		const ty = y - cy;
+		const z00 = this._unpackAtIndex(pixels, index);
+		const z10 = this._unpackAtIndex(pixels, index + 4);
+		const z01 = this._unpackAtIndex(pixels, index + strideByteWidth);
+		const z11 = this._unpackAtIndex(pixels, index + strideByteWidth + 4);
+		return z00 * (1 - tx) * (1 - ty) + z10 * tx * (1 - ty) + z01 * (1 - tx) * ty + z11 * tx * ty;
 	}
 	getUnpackVector() {
 		return [
@@ -18642,7 +18650,7 @@ var DEMData = class {
 		return new RGBAImage({
 			width: this.stride,
 			height: this.stride
-		}, new Uint8Array(this.data.buffer));
+		}, this._getByteView());
 	}
 	backfillBorder(borderTile, dx, dy) {
 		if (this.dim !== borderTile.dim) throw new Error("dem dimension mismatch");
@@ -18666,6 +18674,17 @@ var DEMData = class {
 		const ox = -dx * this.dim;
 		const oy = -dy * this.dim;
 		for (let y = yMin; y < yMax; y++) for (let x = xMin; x < xMax; x++) this.data[this._idx(x, y)] = borderTile.data[this._idx(x + ox, y + oy)];
+	}
+	_getByteView() {
+		let byteView = DEMData.byteViewCache.get(this);
+		if (byteView?.buffer !== this.data.buffer) {
+			byteView = new Uint8Array(this.data.buffer);
+			DEMData.byteViewCache.set(this, byteView);
+		}
+		return byteView;
+	}
+	_unpackAtIndex(pixels, index) {
+		return this.unpack(pixels[index], pixels[index + 1], pixels[index + 2]);
 	}
 };
 function packDEMData(v, unpackVector) {
@@ -20456,297 +20475,7 @@ function projectQueryGeometry(queryGeometry, pixelPosMatrix, z) {
 	return projectedQueryGeometry;
 }
 //#endregion
-//#region node_modules/kdbush/index.js
-const ARRAY_TYPES = [
-	Int8Array,
-	Uint8Array,
-	Uint8ClampedArray,
-	Int16Array,
-	Uint16Array,
-	Int32Array,
-	Uint32Array,
-	Float32Array,
-	Float64Array
-];
-/** @typedef {Int8ArrayConstructor | Uint8ArrayConstructor | Uint8ClampedArrayConstructor | Int16ArrayConstructor | Uint16ArrayConstructor | Int32ArrayConstructor | Uint32ArrayConstructor | Float32ArrayConstructor | Float64ArrayConstructor} TypedArrayConstructor */
-/** @typedef {Int8Array | Uint8Array | Uint8ClampedArray | Int16Array | Uint16Array | Int32Array | Uint32Array | Float32Array | Float64Array} TypedArray */
-const VERSION = 1;
-const HEADER_SIZE = 8;
-const STACK = new Uint32Array(96);
-var KDBush = class KDBush {
-	/**
-	* Creates an index from raw `ArrayBuffer` data.
-	* @param {ArrayBufferLike} data
-	*/
-	static from(data) {
-		if (!data || data.byteLength === void 0 || data.buffer) throw new Error("Data must be an instance of ArrayBuffer or SharedArrayBuffer.");
-		const [magic, versionAndType] = new Uint8Array(data, 0, 2);
-		if (magic !== 219) throw new Error("Data does not appear to be in a KDBush format.");
-		const version = versionAndType >> 4;
-		if (version !== VERSION) throw new Error(`Got v${version} data when expected v${VERSION}.`);
-		const ArrayType = ARRAY_TYPES[versionAndType & 15];
-		if (!ArrayType) throw new Error("Unrecognized array type.");
-		const [nodeSize] = new Uint16Array(data, 2, 1);
-		const [numItems] = new Uint32Array(data, 4, 1);
-		return new KDBush(numItems, nodeSize, ArrayType, void 0, data);
-	}
-	/**
-	* Creates an index that will hold a given number of items.
-	* @param {number} numItems
-	* @param {number} [nodeSize=64] Size of the KD-tree node (64 by default).
-	* @param {TypedArrayConstructor} [ArrayType=Float64Array] The array type used for coordinates storage (`Float64Array` by default).
-	* @param {ArrayBufferConstructor | SharedArrayBufferConstructor} [ArrayBufferType=ArrayBuffer] The array buffer type used for storage (`ArrayBuffer` by default).
-	* @param {ArrayBufferLike} [data] (For internal use only)
-	*/
-	constructor(numItems, nodeSize = 64, ArrayType = Float64Array, ArrayBufferType = ArrayBuffer, data) {
-		if (isNaN(numItems) || numItems < 0) throw new Error(`Unexpected numItems value: ${numItems}.`);
-		this.numItems = +numItems;
-		this.nodeSize = Math.min(Math.max(+nodeSize, 2), 65535);
-		this.ArrayType = ArrayType;
-		this.IndexArrayType = numItems < 65536 ? Uint16Array : Uint32Array;
-		const arrayTypeIndex = ARRAY_TYPES.indexOf(this.ArrayType);
-		const coordsByteSize = numItems * 2 * this.ArrayType.BYTES_PER_ELEMENT;
-		const idsByteSize = numItems * this.IndexArrayType.BYTES_PER_ELEMENT;
-		const padCoords = (8 - idsByteSize % 8) % 8;
-		if (arrayTypeIndex < 0) throw new Error(`Unexpected typed array class: ${ArrayType}.`);
-		if (data) {
-			this.data = data;
-			this.ids = new this.IndexArrayType(data, HEADER_SIZE, numItems);
-			this.coords = new ArrayType(data, HEADER_SIZE + idsByteSize + padCoords, numItems * 2);
-			this._pos = numItems * 2;
-			this._finished = true;
-		} else {
-			const data = this.data = new ArrayBufferType(HEADER_SIZE + coordsByteSize + idsByteSize + padCoords);
-			this.ids = new this.IndexArrayType(data, HEADER_SIZE, numItems);
-			this.coords = new ArrayType(data, HEADER_SIZE + idsByteSize + padCoords, numItems * 2);
-			this._pos = 0;
-			this._finished = false;
-			new Uint8Array(data, 0, 2).set([219, (VERSION << 4) + arrayTypeIndex]);
-			new Uint16Array(data, 2, 1)[0] = nodeSize;
-			new Uint32Array(data, 4, 1)[0] = numItems;
-		}
-	}
-	/**
-	* Add a point to the index.
-	* @param {number} x
-	* @param {number} y
-	* @returns {number} An incremental index associated with the added item (starting from `0`).
-	*/
-	add(x, y) {
-		const index = this._pos >> 1;
-		this.ids[index] = index;
-		this.coords[this._pos++] = x;
-		this.coords[this._pos++] = y;
-		return index;
-	}
-	/**
-	* Perform indexing of the added points.
-	*/
-	finish() {
-		const numAdded = this._pos >> 1;
-		if (numAdded !== this.numItems) throw new Error(`Added ${numAdded} items when expected ${this.numItems}.`);
-		sort(this.ids, this.coords, this.nodeSize, 0, this.numItems - 1, 0);
-		this._finished = true;
-		return this;
-	}
-	/**
-	* Search the index for items within a given bounding box.
-	* @param {number} minX
-	* @param {number} minY
-	* @param {number} maxX
-	* @param {number} maxY
-	* @returns {number[]} An array of indices correponding to the found items.
-	*/
-	range(minX, minY, maxX, maxY) {
-		if (!this._finished) throw new Error("Data not yet indexed - call index.finish().");
-		const { ids, coords, nodeSize } = this;
-		STACK[0] = 0;
-		STACK[1] = ids.length - 1;
-		STACK[2] = 0;
-		let sp = 3;
-		const result = [];
-		while (sp > 0) {
-			const axis = STACK[--sp];
-			const right = STACK[--sp];
-			const left = STACK[--sp];
-			if (right - left <= nodeSize) {
-				for (let i = left; i <= right; i++) {
-					const x = coords[2 * i];
-					const y = coords[2 * i + 1];
-					if (x >= minX && x <= maxX && y >= minY && y <= maxY) result.push(ids[i]);
-				}
-				continue;
-			}
-			const m = left + right >> 1;
-			const x = coords[2 * m];
-			const y = coords[2 * m + 1];
-			if (x >= minX && x <= maxX && y >= minY && y <= maxY) result.push(ids[m]);
-			if (axis === 0 ? minX <= x : minY <= y) {
-				STACK[sp++] = left;
-				STACK[sp++] = m - 1;
-				STACK[sp++] = 1 - axis;
-			}
-			if (axis === 0 ? maxX >= x : maxY >= y) {
-				STACK[sp++] = m + 1;
-				STACK[sp++] = right;
-				STACK[sp++] = 1 - axis;
-			}
-		}
-		return result;
-	}
-	/**
-	* Search the index for items within a given radius.
-	* @param {number} qx
-	* @param {number} qy
-	* @param {number} r Query radius.
-	* @returns {number[]} An array of indices correponding to the found items.
-	*/
-	within(qx, qy, r) {
-		const result = [];
-		this.withinInto(qx, qy, r, result);
-		return result;
-	}
-	/**
-	* Search the index for items within a given radius, writing matching ids into `out`
-	* via indexed assignment (`out[i] = id`). Accepts any indexed-writable container —
-	* a typed array sized to the expected upper bound (allocation-free, fast) or a plain
-	* `Array` (which will grow as needed). Returns the number of matches written.
-	* @param {number} qx
-	* @param {number} qy
-	* @param {number} r Query radius.
-	* @param {number[] | TypedArray} out Container to write matching ids into.
-	* @returns {number} The number of matches written to `out`.
-	*/
-	withinInto(qx, qy, r, out) {
-		if (!this._finished) throw new Error("Data not yet indexed - call index.finish().");
-		const { ids, coords, nodeSize } = this;
-		STACK[0] = 0;
-		STACK[1] = ids.length - 1;
-		STACK[2] = 0;
-		let sp = 3;
-		let count = 0;
-		const r2 = r * r;
-		while (sp > 0) {
-			const axis = STACK[--sp];
-			const right = STACK[--sp];
-			const left = STACK[--sp];
-			if (right - left <= nodeSize) {
-				for (let i = left; i <= right; i++) if (sqDist(coords[2 * i], coords[2 * i + 1], qx, qy) <= r2) out[count++] = ids[i];
-				continue;
-			}
-			const m = left + right >> 1;
-			const x = coords[2 * m];
-			const y = coords[2 * m + 1];
-			if (sqDist(x, y, qx, qy) <= r2) out[count++] = ids[m];
-			if (axis === 0 ? qx - r <= x : qy - r <= y) {
-				STACK[sp++] = left;
-				STACK[sp++] = m - 1;
-				STACK[sp++] = 1 - axis;
-			}
-			if (axis === 0 ? qx + r >= x : qy + r >= y) {
-				STACK[sp++] = m + 1;
-				STACK[sp++] = right;
-				STACK[sp++] = 1 - axis;
-			}
-		}
-		return count;
-	}
-};
-/**
-* @param {Uint16Array | Uint32Array} ids
-* @param {TypedArray} coords
-* @param {number} nodeSize
-* @param {number} left
-* @param {number} right
-* @param {number} axis
-*/
-function sort(ids, coords, nodeSize, left, right, axis) {
-	if (right - left <= nodeSize) return;
-	const m = left + right >> 1;
-	select(ids, coords, m, left, right, axis);
-	sort(ids, coords, nodeSize, left, m - 1, 1 - axis);
-	sort(ids, coords, nodeSize, m + 1, right, 1 - axis);
-}
-/**
-* Custom Floyd-Rivest selection algorithm: sort ids and coords so that
-* [left..k-1] items are smaller than k-th item (on either x or y axis)
-* @param {Uint16Array | Uint32Array} ids
-* @param {TypedArray} coords
-* @param {number} k
-* @param {number} left
-* @param {number} right
-* @param {number} axis
-*/
-function select(ids, coords, k, left, right, axis) {
-	while (right > left) {
-		if (right - left > 600) {
-			const n = right - left + 1;
-			const m = k - left + 1;
-			const z = Math.log(n);
-			const s = .5 * Math.exp(2 * z / 3);
-			const sd = .5 * Math.sqrt(z * s * (n - s) / n) * (m - n / 2 < 0 ? -1 : 1);
-			select(ids, coords, k, Math.max(left, Math.floor(k - m * s / n + sd)), Math.min(right, Math.floor(k + (n - m) * s / n + sd)), axis);
-		}
-		const t = coords[2 * k + axis];
-		let i = left;
-		let j = right;
-		swapItem(ids, coords, left, k);
-		if (coords[2 * right + axis] > t) swapItem(ids, coords, left, right);
-		while (i < j) {
-			swapItem(ids, coords, i, j);
-			i++;
-			j--;
-			while (coords[2 * i + axis] < t) i++;
-			while (coords[2 * j + axis] > t) j--;
-		}
-		if (coords[2 * left + axis] === t) swapItem(ids, coords, left, j);
-		else {
-			j++;
-			swapItem(ids, coords, j, right);
-		}
-		if (j <= k) left = j + 1;
-		if (k <= j) right = j - 1;
-	}
-}
-/**
-* @param {Uint16Array | Uint32Array} ids
-* @param {TypedArray} coords
-* @param {number} i
-* @param {number} j
-*/
-function swapItem(ids, coords, i, j) {
-	swap(ids, i, j);
-	swap(coords, 2 * i, 2 * j);
-	swap(coords, 2 * i + 1, 2 * j + 1);
-}
-/**
-* @param {TypedArray} arr
-* @param {number} i
-* @param {number} j
-*/
-function swap(arr, i, j) {
-	const tmp = arr[i];
-	arr[i] = arr[j];
-	arr[j] = tmp;
-}
-/**
-* @param {number} ax
-* @param {number} ay
-* @param {number} bx
-* @param {number} by
-*/
-function sqDist(ax, ay, bx, by) {
-	const dx = ax - bx;
-	const dy = ay - by;
-	return dx * dx + dy * dy;
-}
-//#endregion
 //#region node_modules/@maplibre/geojson-vt/dist/geojson-vt.mjs
-var AxisType;
-(function(AxisType) {
-	AxisType[AxisType["X"] = 0] = "X";
-	AxisType[AxisType["Y"] = 1] = "Y";
-})(AxisType || (AxisType = {}));
 const GEOJSONVT_CLIP_START = "geojsonvt_clip_start";
 const GEOJSONVT_CLIP_END = "geojsonvt_clip_end";
 //#endregion
@@ -24041,7 +23770,7 @@ async function loadGlyphRange(fontstack, range, urlTemplate, requestManager) {
 //#endregion
 //#region node_modules/@mapbox/tiny-sdf/index.js
 const INF = 0x56bc75e2d63100000;
-const alphaTable = new Float64Array(256);
+const alphaTable = /* @__PURE__ */ new Float64Array(256);
 for (let i = 0; i < 256; i++) {
 	const d = .5 - Math.pow(i / 255, 1 / 2.2);
 	alphaTable[i] = d * Math.abs(d);
@@ -24847,6 +24576,7 @@ var Actor = class {
 					sourceMapId: this.mapId
 				};
 				this.target.postMessage(cancelMessage);
+				reject(new AbortError(abortController.signal.reason));
 			}, addEventDefaultOptions) : null;
 			this.resolveRejects[id] = {
 				resolve: (value) => {
@@ -25851,7 +25581,7 @@ var VectorTileSource = class extends Evented {
 			return result;
 		} catch (err) {
 			delete tile.abortController;
-			if (tile.aborted) return;
+			if (tile.aborted || isAbortError(err)) return;
 			if (err && err.status !== 404) throw err;
 			this._afterTileLoadWorkerResponse(tile, null);
 		}
@@ -26319,7 +26049,7 @@ function mergeSourceDiffs(prevDiff, nextDiff, promoteId) {
 	resolveMergeConflicts(prev, next);
 	const merged = {};
 	if (prev.removeAll || next.removeAll) merged.removeAll = true;
-	merged.remove = new Set([...prev.remove, ...next.remove]);
+	merged.remove = /* @__PURE__ */ new Set([...prev.remove, ...next.remove]);
 	merged.add = new Map([...prev.add, ...next.add]);
 	merged.update = new Map([...prev.update, ...next.update]);
 	if (merged.remove.size && merged.add.size) for (const id of merged.add.keys()) merged.remove.delete(id);
@@ -26869,13 +26599,19 @@ var GeoJSONSource = class extends Evented {
 			subdivisionGranularity: this.map.style.projection.subdivisionGranularity
 		};
 		tile.abortController = new AbortController();
-		const data = await (await this.actorPromise).sendAsync({
-			type: message,
-			data: params
-		}, tile.abortController);
-		delete tile.abortController;
-		tile.unloadVectorData();
-		if (!tile.aborted) tile.loadVectorData(data, this.map.painter, message === "RT");
+		try {
+			const data = await (await this.actorPromise).sendAsync({
+				type: message,
+				data: params
+			}, tile.abortController);
+			delete tile.abortController;
+			tile.unloadVectorData();
+			if (!tile.aborted) tile.loadVectorData(data, this.map.painter, message === "RT");
+		} catch (err) {
+			delete tile.abortController;
+			if (tile.aborted || isAbortError(err)) return;
+			throw err;
+		}
 	}
 	async abortTile(tile) {
 		if (tile.abortController) {
@@ -27771,6 +27507,7 @@ var FeatureTable = class {
 		this._idVector = _idVector;
 		this._propertyVectors = _propertyVectors;
 		this._extent = _extent;
+		if (_name.length === 0) throw new Error("Missing layer name");
 	}
 	get name() {
 		return this._name;
@@ -27904,7 +27641,7 @@ var PhysicalLevelTechnique;
 * Bit masks for each bitwidth 0-32.
 * DO NOT MUTATE - this is a shared constant.
 */
-const masks = new Uint32Array(33);
+const masks = /* @__PURE__ */ new Uint32Array(33);
 masks[0] = 0;
 for (let bitWidth = 1; bitWidth <= 32; bitWidth++) masks[bitWidth] = bitWidth === 32 ? 4294967295 : 4294967295 >>> 32 - bitWidth;
 const MASKS = masks;
@@ -30081,7 +29818,10 @@ function decodeSignedConstInt64Stream(data, offset, streamMetadata) {
 }
 function decodeUnsignedConstInt64Stream(data, offset, streamMetadata) {
 	const values = decodeVarintInt64(data, offset, streamMetadata.numValues);
-	if (values.length === 1) return values[0];
+	if (values.length === 1) {
+		if (streamMetadata.logicalLevelTechnique1 === LogicalLevelTechnique.DELTA) return decodeZigZagInt64Value(values[0]);
+		return values[0];
+	}
 	return decodeUnsignedConstRleInt64(values);
 }
 /**
@@ -31645,6 +31385,7 @@ function decodeEmbeddedTileSetMetadata(bytes, offset) {
 	meta.featureTables = [];
 	const table = {};
 	table.name = decodeString(bytes, offset);
+	if (table.name.length === 0) throw new Error("Missing layer name");
 	const extent = decodeVarintInt32(bytes, offset, 1)[0] >>> 0;
 	const columnCount = decodeVarintInt32(bytes, offset, 1)[0] >>> 0;
 	table.columns = new Array(columnCount);
@@ -31718,7 +31459,7 @@ function decodeTile(tile, geometryScaling, idWithinMaxSafeInteger = true) {
 }
 function decodeIdColumn(tile, columnMetadata, offset, columnName, idDataStreamMetadata, sizeOrNullabilityBuffer, idWithinMaxSafeInteger = false) {
 	const scalarTypeMetadata = columnMetadata.scalarType;
-	if (!scalarTypeMetadata || scalarTypeMetadata.type !== "logicalType" || scalarTypeMetadata.logicalType !== LogicalScalarType.ID) throw new Error(`ID column must be a logical ID scalar type: ${columnName}`);
+	if (scalarTypeMetadata?.type !== "logicalType" || scalarTypeMetadata.logicalType !== LogicalScalarType.ID) throw new Error(`ID column must be a logical ID scalar type: ${columnName}`);
 	const idDataType = scalarTypeMetadata.longID ? ScalarType.UINT_64 : ScalarType.UINT_32;
 	const nullabilityBuffer = typeof sizeOrNullabilityBuffer === "number" ? void 0 : sizeOrNullabilityBuffer;
 	const vectorType = getVectorType(idDataStreamMetadata, sizeOrNullabilityBuffer, tile, offset, idDataType === ScalarType.UINT_64 ? "int64" : "int32");
@@ -32622,7 +32363,7 @@ function calculateTileMatrix(unwrappedTileID, worldSize) {
 	const canonical = unwrappedTileID.canonical;
 	const scale = worldSize / zoomScale(canonical.z);
 	const unwrappedX = canonical.x + Math.pow(2, canonical.z) * unwrappedTileID.wrap;
-	const worldMatrix = new Float64Array(16);
+	const worldMatrix = /* @__PURE__ */ new Float64Array(16);
 	identity(worldMatrix);
 	translate$1(worldMatrix, worldMatrix, [
 		unwrappedX * scale,
@@ -36631,6 +36372,291 @@ var PauseablePlacement = class {
 	}
 };
 //#endregion
+//#region node_modules/kdbush/index.js
+const ARRAY_TYPES = [
+	Int8Array,
+	Uint8Array,
+	Uint8ClampedArray,
+	Int16Array,
+	Uint16Array,
+	Int32Array,
+	Uint32Array,
+	Float32Array,
+	Float64Array
+];
+/** @typedef {Int8ArrayConstructor | Uint8ArrayConstructor | Uint8ClampedArrayConstructor | Int16ArrayConstructor | Uint16ArrayConstructor | Int32ArrayConstructor | Uint32ArrayConstructor | Float32ArrayConstructor | Float64ArrayConstructor} TypedArrayConstructor */
+/** @typedef {Int8Array | Uint8Array | Uint8ClampedArray | Int16Array | Uint16Array | Int32Array | Uint32Array | Float32Array | Float64Array} TypedArray */
+const VERSION = 1;
+const HEADER_SIZE = 8;
+const STACK = /* @__PURE__ */ new Uint32Array(96);
+var KDBush = class KDBush {
+	/**
+	* Creates an index from raw `ArrayBuffer` data.
+	* @param {ArrayBufferLike} data
+	*/
+	static from(data) {
+		if (!data || data.byteLength === void 0 || data.buffer) throw new Error("Data must be an instance of ArrayBuffer or SharedArrayBuffer.");
+		const [magic, versionAndType] = new Uint8Array(data, 0, 2);
+		if (magic !== 219) throw new Error("Data does not appear to be in a KDBush format.");
+		const version = versionAndType >> 4;
+		if (version !== VERSION) throw new Error(`Got v${version} data when expected v${VERSION}.`);
+		const ArrayType = ARRAY_TYPES[versionAndType & 15];
+		if (!ArrayType) throw new Error("Unrecognized array type.");
+		const [nodeSize] = new Uint16Array(data, 2, 1);
+		const [numItems] = new Uint32Array(data, 4, 1);
+		return new KDBush(numItems, nodeSize, ArrayType, void 0, data);
+	}
+	/**
+	* Creates an index that will hold a given number of items.
+	* @param {number} numItems
+	* @param {number} [nodeSize=64] Size of the KD-tree node (64 by default).
+	* @param {TypedArrayConstructor} [ArrayType=Float64Array] The array type used for coordinates storage (`Float64Array` by default).
+	* @param {ArrayBufferConstructor | SharedArrayBufferConstructor} [ArrayBufferType=ArrayBuffer] The array buffer type used for storage (`ArrayBuffer` by default).
+	* @param {ArrayBufferLike} [data] (For internal use only)
+	*/
+	constructor(numItems, nodeSize = 64, ArrayType = Float64Array, ArrayBufferType = ArrayBuffer, data) {
+		if (isNaN(numItems) || numItems < 0) throw new Error(`Unexpected numItems value: ${numItems}.`);
+		this.numItems = +numItems;
+		this.nodeSize = Math.min(Math.max(+nodeSize, 2), 65535);
+		this.ArrayType = ArrayType;
+		this.IndexArrayType = numItems < 65536 ? Uint16Array : Uint32Array;
+		const arrayTypeIndex = ARRAY_TYPES.indexOf(this.ArrayType);
+		const coordsByteSize = numItems * 2 * this.ArrayType.BYTES_PER_ELEMENT;
+		const idsByteSize = numItems * this.IndexArrayType.BYTES_PER_ELEMENT;
+		const padCoords = (8 - idsByteSize % 8) % 8;
+		if (arrayTypeIndex < 0) throw new Error(`Unexpected typed array class: ${ArrayType}.`);
+		if (data) {
+			this.data = data;
+			this.ids = new this.IndexArrayType(data, HEADER_SIZE, numItems);
+			this.coords = new ArrayType(data, HEADER_SIZE + idsByteSize + padCoords, numItems * 2);
+			this._pos = numItems * 2;
+			this._finished = true;
+		} else {
+			const data = this.data = new ArrayBufferType(HEADER_SIZE + coordsByteSize + idsByteSize + padCoords);
+			this.ids = new this.IndexArrayType(data, HEADER_SIZE, numItems);
+			this.coords = new ArrayType(data, HEADER_SIZE + idsByteSize + padCoords, numItems * 2);
+			this._pos = 0;
+			this._finished = false;
+			new Uint8Array(data, 0, 2).set([219, (VERSION << 4) + arrayTypeIndex]);
+			new Uint16Array(data, 2, 1)[0] = nodeSize;
+			new Uint32Array(data, 4, 1)[0] = numItems;
+		}
+	}
+	/**
+	* Add a point to the index.
+	* @param {number} x
+	* @param {number} y
+	* @returns {number} An incremental index associated with the added item (starting from `0`).
+	*/
+	add(x, y) {
+		const index = this._pos >> 1;
+		this.ids[index] = index;
+		this.coords[this._pos++] = x;
+		this.coords[this._pos++] = y;
+		return index;
+	}
+	/**
+	* Perform indexing of the added points.
+	*/
+	finish() {
+		const numAdded = this._pos >> 1;
+		if (numAdded !== this.numItems) throw new Error(`Added ${numAdded} items when expected ${this.numItems}.`);
+		sort(this.ids, this.coords, this.nodeSize, 0, this.numItems - 1, 0);
+		this._finished = true;
+		return this;
+	}
+	/**
+	* Search the index for items within a given bounding box.
+	* @param {number} minX
+	* @param {number} minY
+	* @param {number} maxX
+	* @param {number} maxY
+	* @returns {number[]} An array of indices correponding to the found items.
+	*/
+	range(minX, minY, maxX, maxY) {
+		if (!this._finished) throw new Error("Data not yet indexed - call index.finish().");
+		const { ids, coords, nodeSize } = this;
+		STACK[0] = 0;
+		STACK[1] = ids.length - 1;
+		STACK[2] = 0;
+		let sp = 3;
+		const result = [];
+		while (sp > 0) {
+			const axis = STACK[--sp];
+			const right = STACK[--sp];
+			const left = STACK[--sp];
+			if (right - left <= nodeSize) {
+				for (let i = left; i <= right; i++) {
+					const x = coords[2 * i];
+					const y = coords[2 * i + 1];
+					if (x >= minX && x <= maxX && y >= minY && y <= maxY) result.push(ids[i]);
+				}
+				continue;
+			}
+			const m = left + right >> 1;
+			const x = coords[2 * m];
+			const y = coords[2 * m + 1];
+			if (x >= minX && x <= maxX && y >= minY && y <= maxY) result.push(ids[m]);
+			if (axis === 0 ? minX <= x : minY <= y) {
+				STACK[sp++] = left;
+				STACK[sp++] = m - 1;
+				STACK[sp++] = 1 - axis;
+			}
+			if (axis === 0 ? maxX >= x : maxY >= y) {
+				STACK[sp++] = m + 1;
+				STACK[sp++] = right;
+				STACK[sp++] = 1 - axis;
+			}
+		}
+		return result;
+	}
+	/**
+	* Search the index for items within a given radius.
+	* @param {number} qx
+	* @param {number} qy
+	* @param {number} r Query radius.
+	* @returns {number[]} An array of indices correponding to the found items.
+	*/
+	within(qx, qy, r) {
+		const result = [];
+		this.withinInto(qx, qy, r, result);
+		return result;
+	}
+	/**
+	* Search the index for items within a given radius, writing matching ids into `out`
+	* via indexed assignment (`out[i] = id`). Accepts any indexed-writable container —
+	* a typed array sized to the expected upper bound (allocation-free, fast) or a plain
+	* `Array` (which will grow as needed). Returns the number of matches written.
+	* @param {number} qx
+	* @param {number} qy
+	* @param {number} r Query radius.
+	* @param {number[] | TypedArray} out Container to write matching ids into.
+	* @returns {number} The number of matches written to `out`.
+	*/
+	withinInto(qx, qy, r, out) {
+		if (!this._finished) throw new Error("Data not yet indexed - call index.finish().");
+		const { ids, coords, nodeSize } = this;
+		STACK[0] = 0;
+		STACK[1] = ids.length - 1;
+		STACK[2] = 0;
+		let sp = 3;
+		let count = 0;
+		const r2 = r * r;
+		while (sp > 0) {
+			const axis = STACK[--sp];
+			const right = STACK[--sp];
+			const left = STACK[--sp];
+			if (right - left <= nodeSize) {
+				for (let i = left; i <= right; i++) if (sqDist(coords[2 * i], coords[2 * i + 1], qx, qy) <= r2) out[count++] = ids[i];
+				continue;
+			}
+			const m = left + right >> 1;
+			const x = coords[2 * m];
+			const y = coords[2 * m + 1];
+			if (sqDist(x, y, qx, qy) <= r2) out[count++] = ids[m];
+			if (axis === 0 ? qx - r <= x : qy - r <= y) {
+				STACK[sp++] = left;
+				STACK[sp++] = m - 1;
+				STACK[sp++] = 1 - axis;
+			}
+			if (axis === 0 ? qx + r >= x : qy + r >= y) {
+				STACK[sp++] = m + 1;
+				STACK[sp++] = right;
+				STACK[sp++] = 1 - axis;
+			}
+		}
+		return count;
+	}
+};
+/**
+* @param {Uint16Array | Uint32Array} ids
+* @param {TypedArray} coords
+* @param {number} nodeSize
+* @param {number} left
+* @param {number} right
+* @param {number} axis
+*/
+function sort(ids, coords, nodeSize, left, right, axis) {
+	if (right - left <= nodeSize) return;
+	const m = left + right >> 1;
+	select(ids, coords, m, left, right, axis);
+	sort(ids, coords, nodeSize, left, m - 1, 1 - axis);
+	sort(ids, coords, nodeSize, m + 1, right, 1 - axis);
+}
+/**
+* Custom Floyd-Rivest selection algorithm: sort ids and coords so that
+* [left..k-1] items are smaller than k-th item (on either x or y axis)
+* @param {Uint16Array | Uint32Array} ids
+* @param {TypedArray} coords
+* @param {number} k
+* @param {number} left
+* @param {number} right
+* @param {number} axis
+*/
+function select(ids, coords, k, left, right, axis) {
+	while (right > left) {
+		if (right - left > 600) {
+			const n = right - left + 1;
+			const m = k - left + 1;
+			const z = Math.log(n);
+			const s = .5 * Math.exp(2 * z / 3);
+			const sd = .5 * Math.sqrt(z * s * (n - s) / n) * (m - n / 2 < 0 ? -1 : 1);
+			select(ids, coords, k, Math.max(left, Math.floor(k - m * s / n + sd)), Math.min(right, Math.floor(k + (n - m) * s / n + sd)), axis);
+		}
+		const t = coords[2 * k + axis];
+		let i = left;
+		let j = right;
+		swapItem(ids, coords, left, k);
+		if (coords[2 * right + axis] > t) swapItem(ids, coords, left, right);
+		while (i < j) {
+			swapItem(ids, coords, i, j);
+			i++;
+			j--;
+			while (coords[2 * i + axis] < t) i++;
+			while (coords[2 * j + axis] > t) j--;
+		}
+		if (coords[2 * left + axis] === t) swapItem(ids, coords, left, j);
+		else {
+			j++;
+			swapItem(ids, coords, j, right);
+		}
+		if (j <= k) left = j + 1;
+		if (k <= j) right = j - 1;
+	}
+}
+/**
+* @param {Uint16Array | Uint32Array} ids
+* @param {TypedArray} coords
+* @param {number} i
+* @param {number} j
+*/
+function swapItem(ids, coords, i, j) {
+	swap(ids, i, j);
+	swap(coords, 2 * i, 2 * j);
+	swap(coords, 2 * i + 1, 2 * j + 1);
+}
+/**
+* @param {TypedArray} arr
+* @param {number} i
+* @param {number} j
+*/
+function swap(arr, i, j) {
+	const tmp = arr[i];
+	arr[i] = arr[j];
+	arr[j] = tmp;
+}
+/**
+* @param {number} ax
+* @param {number} ay
+* @param {number} bx
+* @param {number} by
+*/
+function sqDist(ax, ay, bx, by) {
+	const dx = ax - bx;
+	const dy = ay - by;
+	return dx * dx + dy * dy;
+}
+//#endregion
 //#region src/symbol/cross_tile_symbol_index.ts
 const roundingFactor = 512 / EXTENT / 2;
 var TileLayerIndex = class {
@@ -37540,7 +37566,7 @@ var TransformHelper = class {
 	_calcMatrices() {
 		if (this._width && this._height) {
 			this._pixelsToGLUnits = [2 / this._width, -2 / this._height];
-			let m = identity(new Float64Array(16));
+			let m = identity(/* @__PURE__ */ new Float64Array(16));
 			scale$3(m, m, [
 				this._width / 2,
 				-this._height / 2,
@@ -37552,7 +37578,7 @@ var TransformHelper = class {
 				0
 			]);
 			this._clipSpaceToPixelsMatrix = m;
-			m = identity(new Float64Array(16));
+			m = identity(/* @__PURE__ */ new Float64Array(16));
 			scale$3(m, m, [
 				1,
 				-1,
@@ -38445,9 +38471,9 @@ var MercatorTransform = class MercatorTransform {
 		const cameraToSeaLevelDistance = Math.max(this._helper.cameraToCenterDistance / 2, this._helper.cameraToCenterDistance + this._helper._elevation * this._helper._pixelPerMeter / Math.cos(limitedPitchRadians));
 		this._calculateNearFarZIfNeeded(cameraToSeaLevelDistance, limitedPitchRadians, offset);
 		let m;
-		m = new Float64Array(16);
+		m = /* @__PURE__ */ new Float64Array(16);
 		perspective(m, this.fovInRadians, this._helper._width / this._helper._height, this._helper._nearZ, this._helper._farZ);
-		this._invProjMatrix = new Float64Array(16);
+		this._invProjMatrix = /* @__PURE__ */ new Float64Array(16);
 		fastInvertProjMat4(this._invProjMatrix, m);
 		m[8] = -offset.x * 2 / this._helper._width;
 		m[9] = offset.y * 2 / this._helper._height;
@@ -38480,7 +38506,7 @@ var MercatorTransform = class MercatorTransform {
 			1,
 			this._helper._pixelPerMeter
 		]);
-		this._pixelMatrix = multiply$1(new Float64Array(16), this.clipSpaceToPixelsMatrix, m);
+		this._pixelMatrix = multiply$1(/* @__PURE__ */ new Float64Array(16), this.clipSpaceToPixelsMatrix, m);
 		translate$1(m, m, [
 			0,
 			0,
@@ -38500,7 +38526,7 @@ var MercatorTransform = class MercatorTransform {
 			cameraPos[1] / cameraPos[3],
 			cameraPos[2] / cameraPos[3]
 		];
-		this._fogMatrix = new Float64Array(16);
+		this._fogMatrix = /* @__PURE__ */ new Float64Array(16);
 		perspective(this._fogMatrix, this.fovInRadians, this.width / this.height, cameraToSeaLevelDistance, this._helper._farZ);
 		this._fogMatrix[8] = -offset.x * 2 / this.width;
 		this._fogMatrix[9] = offset.y * 2 / this.height;
@@ -38532,7 +38558,7 @@ var MercatorTransform = class MercatorTransform {
 			0,
 			-this.elevation
 		]);
-		this._pixelMatrix3D = multiply$1(new Float64Array(16), this.clipSpaceToPixelsMatrix, m);
+		this._pixelMatrix3D = multiply$1(/* @__PURE__ */ new Float64Array(16), this.clipSpaceToPixelsMatrix, m);
 		const xShift = this._helper._width % 2 / 2, yShift = this._helper._height % 2 / 2, angleCos = Math.cos(this.bearingInRadians), angleSin = Math.sin(-this.bearingInRadians), dx = x - Math.round(x) + angleCos * xShift + angleSin * yShift, dy = y - Math.round(y) + angleCos * yShift + angleSin * xShift;
 		const alignedM = new Float64Array(m);
 		translate$1(alignedM, alignedM, [
@@ -38541,7 +38567,7 @@ var MercatorTransform = class MercatorTransform {
 			0
 		]);
 		this._alignedProjMatrix = alignedM;
-		m = invert(new Float64Array(16), this._pixelMatrix);
+		m = invert(/* @__PURE__ */ new Float64Array(16), this._pixelMatrix);
 		if (!m) throw new Error("failed to invert matrix");
 		this._pixelMatrixInverse = m;
 		this._clearMatrixCaches();
@@ -38718,7 +38744,7 @@ function updateRotation(args) {
 	if (args.useSlerp) if (args.k < 1) {
 		const startRotation = rollPitchBearingToQuat(args.startEulerAngles.roll, args.startEulerAngles.pitch, args.startEulerAngles.bearing);
 		const endRotation = rollPitchBearingToQuat(args.endEulerAngles.roll, args.endEulerAngles.pitch, args.endEulerAngles.bearing);
-		const rotation = new Float64Array(4);
+		const rotation = /* @__PURE__ */ new Float64Array(4);
 		slerp(rotation, startRotation, endRotation, args.k);
 		const eulerAngles = getRollPitchBearing(rotation);
 		args.tr.setRoll(eulerAngles.roll);
@@ -39027,7 +39053,7 @@ var ProjectionErrorMeasurement = class ProjectionErrorMeasurement {
 		const indexArray = new TriangleIndexArray();
 		indexArray.emplaceBack(0, 1, 2);
 		this._fullscreenTriangle = new Mesh(context.createVertexBuffer(vertexArray, posAttributes.members), context.createIndexBuffer(indexArray), SegmentVector.simpleSegment(0, 0, vertexArray.length, indexArray.length));
-		this._resultBuffer = new Uint8Array(4);
+		this._resultBuffer = /* @__PURE__ */ new Uint8Array(4);
 		context.activeTexture.set(gl.TEXTURE1);
 		const texture = gl.createTexture();
 		gl.bindTexture(gl.TEXTURE_2D, texture);
@@ -39426,7 +39452,7 @@ function mercatorCoordinatesToAngularCoordinatesRadians(mercatorX, mercatorY) {
 */
 function angularCoordinatesRadiansToVector(lngRadians, latRadians) {
 	const len = Math.cos(latRadians);
-	const vec = new Float64Array(3);
+	const vec = /* @__PURE__ */ new Float64Array(3);
 	vec[0] = Math.sin(lngRadians) * len;
 	vec[1] = Math.sin(latRadians);
 	vec[2] = Math.cos(lngRadians) * len;
@@ -39448,7 +39474,7 @@ function projectTileCoordinatesToSphere(inTileX, inTileY, tileIdX, tileIdY, tile
 	const sphericalX = mod(mercatorX * Math.PI * 2 + Math.PI, Math.PI * 2);
 	const sphericalY = 2 * Math.atan(Math.exp(Math.PI - mercatorY * Math.PI * 2)) - Math.PI * .5;
 	const len = Math.cos(sphericalY);
-	const vec = new Float64Array(3);
+	const vec = /* @__PURE__ */ new Float64Array(3);
 	vec[0] = Math.sin(sphericalX) * len;
 	vec[1] = Math.sin(sphericalY);
 	vec[2] = Math.cos(sphericalX) * len;
@@ -41592,6 +41618,7 @@ var Style = class extends Evented {
 		this.tileManagers = {};
 		this.zoomHistory = new ZoomHistory();
 		this._availableImages = [];
+		this._imagesListDirty = false;
 		this._globalState = {};
 		this._serializedLayers = {};
 		this.stylesheet = null;
@@ -41770,8 +41797,8 @@ var Style = class extends Evented {
 		}
 		this._spritesImagesIds = {};
 		this._availableImages = this.imageManager.listImages();
+		this._imagesListDirty = true;
 		this._changed = true;
-		this.dispatcher.broadcast("SI", this._availableImages);
 		this.fire(new MapStyleDataEvent("data"));
 	}
 	_validateLayer(layer) {
@@ -41840,6 +41867,10 @@ var Style = class extends Evented {
 		if (!this._loaded) return;
 		const changed = this._changed;
 		if (changed) {
+			if (this._imagesListDirty) {
+				this.dispatcher.broadcast("SI", this._availableImages);
+				this._imagesListDirty = false;
+			}
 			const updatedIds = Object.keys(this._updatedLayers);
 			const removedIds = Object.keys(this._removedLayers);
 			if (updatedIds.length || removedIds.length) this._updateWorkerLayers(updatedIds, removedIds);
@@ -42028,8 +42059,8 @@ var Style = class extends Evented {
 	_afterImageUpdated(id) {
 		this._availableImages = this.imageManager.listImages();
 		this._changedImages[id] = true;
+		this._imagesListDirty = true;
 		this._changed = true;
-		this.dispatcher.broadcast("SI", this._availableImages);
 		this.fire(new MapStyleDataEvent("data"));
 	}
 	listImages() {
@@ -42711,8 +42742,8 @@ var Style = class extends Evented {
 		this.stylesheet.sprite = internalSpriteRepresentation.length > 0 ? internalSpriteRepresentation : void 0;
 		delete this._spritesImagesIds[id];
 		this._availableImages = this.imageManager.listImages();
+		this._imagesListDirty = true;
 		this._changed = true;
-		this.dispatcher.broadcast("SI", this._availableImages);
 		this.fire(new MapStyleDataEvent("data"));
 	}
 	/**
@@ -43162,7 +43193,7 @@ var Layout = class extends Benchmark {
 };
 //#endregion
 //#region package.json
-var version$4 = "6.0.0-16";
+var version$4 = "6.0.0-18";
 //#endregion
 //#region src/data/raster_bounds_attributes.ts
 const rasterBoundsAttributes = createLayout([{
@@ -45039,7 +45070,7 @@ function createQuadTriangles(quadCount) {
 }
 //#endregion
 //#region src/webgl/draw/draw_symbol.ts
-const identityMat4 = identity(new Float32Array(16));
+const identityMat4 = identity(/* @__PURE__ */ new Float32Array(16));
 function drawSymbols(painter, tileManager, layer, coords, variableOffsets, renderOptions) {
 	if (painter.renderPass !== "translucent") return;
 	const { isRenderingToTexture } = renderOptions;
@@ -45678,7 +45709,7 @@ function drawLineTiles(painter, tileManager, layer, coords, renderOptions, useTe
 		const prevProgram = painter.context.program.get();
 		const program = painter.useProgram(programId, programConfiguration);
 		const programChanged = firstTile || program.program !== prevProgram;
-		const terrainData = useTerrain ? painter.style.map.terrain?.getTerrainData(coord) : null;
+		const terrainData = useTerrain ? painter.getTerrainDataForTile(coord, isRenderingToTexture) : null;
 		const constantPattern = patternProperty.constantOr(null);
 		const constantDasharray = dasharrayProperty?.constantOr(null);
 		if (constantPattern && tile.imageAtlas) {
@@ -45816,7 +45847,7 @@ function drawFillTiles(painter, tileManager, layer, coords, depthMode, colorMode
 		if (!bucket) continue;
 		const programConfiguration = bucket.programConfigurations.get(layer.id);
 		const program = painter.useProgram(programName, programConfiguration);
-		const terrainData = painter.style.map.terrain?.getTerrainData(coord);
+		const terrainData = painter.getTerrainDataForTile(coord, isRenderingToTexture);
 		if (image) {
 			painter.context.activeTexture.set(gl.TEXTURE0);
 			tile.imageAtlasTexture.bind(gl.LINEAR, gl.CLAMP_TO_EDGE);
@@ -45933,7 +45964,7 @@ function renderHillshade(painter, tileManager, layer, coords, stencilModes, dept
 		const fbo = tile.fbo;
 		if (!fbo) continue;
 		const mesh = projection.getMeshFromTileID(context, coord.canonical, useBorder, true, "raster");
-		const terrainData = painter.style.map.terrain?.getTerrainData(coord);
+		const terrainData = painter.getTerrainDataForTile(coord, isRenderingToTexture);
 		context.activeTexture.set(gl.TEXTURE0);
 		gl.bindTexture(gl.TEXTURE_2D, fbo.colorAttachment.get());
 		const projectionData = transform.getProjectionData({
@@ -46049,7 +46080,7 @@ function renderColorRelief(painter, tileManager, layer, coords, stencilModes, de
 			tile.demTexture.bind(textureFilter, gl.CLAMP_TO_EDGE);
 		}
 		const mesh = projection.getMeshFromTileID(context, coord.canonical, useBorder, true, "raster");
-		const terrainData = painter.style.map.terrain?.getTerrainData(coord);
+		const terrainData = painter.getTerrainDataForTile(coord, isRenderingToTexture);
 		const projectionData = transform.getProjectionData({
 			overscaledTileID: coord,
 			aligned: align,
@@ -46110,7 +46141,7 @@ function drawTiles(painter, tileManager, layer, coords, stencilModes, useBorder,
 			parentTile.texture.bind(textureFilter, gl.CLAMP_TO_EDGE, gl.LINEAR_MIPMAP_NEAREST);
 		} else tile.texture.bind(textureFilter, gl.CLAMP_TO_EDGE, gl.LINEAR_MIPMAP_NEAREST);
 		if (tile.texture.useMipmap && context.extTextureFilterAnisotropic && painter.transform.pitch > painter.options.anisotropicFilterPitch) gl.texParameterf(gl.TEXTURE_2D, context.extTextureFilterAnisotropic.TEXTURE_MAX_ANISOTROPY_EXT, context.extTextureFilterAnisotropicMax);
-		const terrainData = painter.style.map.terrain?.getTerrainData(coord);
+		const terrainData = painter.getTerrainDataForTile(coord, isRenderingToTexture);
 		const projectionData = transform.getProjectionData({
 			overscaledTileID: coord,
 			aligned: align,
@@ -46232,7 +46263,7 @@ function drawBackground(painter, tileManager, layer, coords, renderOptions) {
 			tileID,
 			tileSize
 		}, crossfade) : backgroundUniformValues(opacity, color);
-		const terrainData = painter.style.map.terrain?.getTerrainData(tileID);
+		const terrainData = painter.getTerrainDataForTile(tileID, isRenderingToTexture);
 		const mesh = projection.getMeshFromTileID(context, tileID.canonical, false, true, "raster");
 		program.draw(context, gl.TRIANGLES, depthMode, stencilMode, colorMode, CullFaceMode.backCCW, uniformValues, terrainData, projectionData, layer.id, mesh.vertexBuffer, mesh.indexBuffer, mesh.segments);
 	}
@@ -46543,7 +46574,7 @@ function getSunPos(light, transform) {
 		-_lp.y,
 		-_lp.z
 	];
-	const lightMat = identity(new Float64Array(16));
+	const lightMat = identity(/* @__PURE__ */ new Float64Array(16));
 	if (light.properties.get("anchor") === "map") {
 		rotateZ$1(lightMat, lightMat, transform.rollInRadians);
 		rotateX$1(lightMat, lightMat, -transform.pitchInRadians);
@@ -46570,7 +46601,7 @@ function drawAtmosphere(painter, sky, light) {
 	if (atmosphereBlend === 0) return;
 	const globeRadius = getGlobeRadiusPixels(transform.worldSize, transform.center.lat);
 	const invProjMatrix = transform.inverseProjectionMatrix;
-	const vec = new Float64Array(4);
+	const vec = /* @__PURE__ */ new Float64Array(4);
 	vec[3] = 1;
 	transformMat4$1(vec, vec, transform.modelViewProjectionMatrix);
 	vec[0] /= vec[3];
@@ -46629,7 +46660,7 @@ var Painter = class Painter {
 		this.terrainFacilitator = {
 			depthDirty: true,
 			coordsDirty: false,
-			matrix: identity(new Float64Array(16)),
+			matrix: identity(/* @__PURE__ */ new Float64Array(16)),
 			renderTime: 0
 		};
 		this.setup();
@@ -46756,7 +46787,7 @@ var Painter = class Painter {
 		const program = this.useProgram("clippingMask");
 		for (const tileID of tileIDs) {
 			const stencilRef = tileStencilRefs[tileID.key];
-			const terrainData = this.style.map.terrain?.getTerrainData(tileID);
+			const terrainData = this.getTerrainDataForTile(tileID, renderToTexture);
 			const mesh = projection.getMeshFromTileID(this.context, tileID.canonical, useBorders, true, "stencil");
 			const projectionData = transform.getProjectionData({
 				overscaledTileID: tileID,
@@ -46768,6 +46799,10 @@ var Painter = class Painter {
 				mask: 0
 			}, stencilRef, 255, gl.KEEP, gl.KEEP, gl.REPLACE), ColorMode.disabled, renderToTexture ? CullFaceMode.disabled : CullFaceMode.backCCW, null, terrainData, projectionData, "$clipping", mesh.vertexBuffer, mesh.indexBuffer, mesh.segments);
 		}
+	}
+	getTerrainDataForTile(tileID, isRenderingToTexture) {
+		if (isRenderingToTexture && this.style.projection?.name === "mercator") return null;
+		return this.style.map.terrain?.getTerrainData(tileID) || null;
 	}
 	/**
 	* Fills the depth buffer with the geometry of all supplied tiles.
@@ -47000,7 +47035,7 @@ var Painter = class Painter {
 		doUpdate ||= this.style.map.terrain.tileManager.anyTilesAfterTime(this.terrainFacilitator.renderTime);
 		if (!doUpdate) return;
 		copy(prevMatrix, currMatrix);
-		this.terrainFacilitator.renderTime = Date.now();
+		this.terrainFacilitator.renderTime = now();
 		this.terrainFacilitator.depthDirty = false;
 		this.terrainFacilitator.coordsDirty = true;
 		this.drawFunctions.terrainDepth(this, this.style.map.terrain);
@@ -51139,7 +51174,7 @@ var TerrainTileManager = class extends Evented {
 			keys[tileID.key] = true;
 			this._renderableTilesKeys.push(tileID.key);
 			if (!this._tiles[tileID.key]) {
-				tileID.terrainRttPosMatrix32f = new Float32Array(16);
+				tileID.terrainRttPosMatrix32f = /* @__PURE__ */ new Float32Array(16);
 				ortho(tileID.terrainRttPosMatrix32f, 0, EXTENT, EXTENT, 0, 0, 1);
 				this._tiles[tileID.key] = new Tile(tileID, this.tileSize);
 				this._lastTilesetChange = now();
@@ -51319,7 +51354,7 @@ var TerrainTileManager = class extends Evented {
 	* @param time - the time
 	* @returns true if any tiles came into view at or after the specified time
 	*/
-	anyTilesAfterTime(time = Date.now()) {
+	anyTilesAfterTime(time = now()) {
 		return this._lastTilesetChange >= time;
 	}
 	/**
@@ -51430,8 +51465,7 @@ var Terrain = class {
 		if (!dem) return 0;
 		const pos = transformMat4([], [normalized.x / extent * EXTENT, normalized.y / extent * EXTENT], terrain.u_terrain_matrix);
 		const coord = [pos[0] * dem.dim, pos[1] * dem.dim];
-		const cx = Math.floor(coord[0]), cy = Math.floor(coord[1]), tx = coord[0] - cx, ty = coord[1] - cy;
-		return dem.get(cx, cy) * (1 - tx) * (1 - ty) + dem.get(cx + 1, cy) * tx * (1 - ty) + dem.get(cx, cy + 1) * (1 - tx) * ty + dem.get(cx + 1, cy + 1) * tx * ty;
+		return dem.sampleBilinear(coord[0], coord[1]);
 	}
 	/**
 	* Get the elevation for given {@link LngLat} in respect of exaggeration.
@@ -51483,7 +51517,7 @@ var Terrain = class {
 			const image = new RGBAImage({
 				width: 1,
 				height: 1
-			}, new Uint8Array(4));
+			}, /* @__PURE__ */ new Uint8Array(4));
 			this._emptyDepthTexture = new Texture(context, image, context.gl.RGBA, { premultiply: false });
 			this._emptyDemUnpack = [
 				0,
@@ -51501,7 +51535,7 @@ var Terrain = class {
 		const sourceTile = this.tileManager.getSourceTile(tileID, true);
 		if (sourceTile?.dem && (!sourceTile.demTexture || sourceTile.needsTerrainPrepare)) {
 			const context = this.painter.context;
-			sourceTile.demTexture = this.painter.getTileTexture(sourceTile.dem.stride);
+			sourceTile.demTexture ||= this.painter.getTileTexture(sourceTile.dem.stride);
 			if (sourceTile.demTexture) sourceTile.demTexture.update(sourceTile.dem.getPixels(), { premultiply: false });
 			else sourceTile.demTexture = new Texture(context, sourceTile.dem.getPixels(), context.gl.RGBA, { premultiply: false });
 			sourceTile.demTexture.bind(context.gl.NEAREST, context.gl.CLAMP_TO_EDGE);
@@ -51515,7 +51549,7 @@ var Terrain = class {
 			else warnOnce("cannot calculate elevation if elevation maxzoom > source.maxzoom");
 			const dx = tileID.canonical.x - (tileID.canonical.x >> dz << dz);
 			const dy = tileID.canonical.y - (tileID.canonical.y >> dz << dz);
-			const demMatrix = fromScaling(new Float64Array(16), [
+			const demMatrix = fromScaling(/* @__PURE__ */ new Float64Array(16), [
 				1 / (EXTENT << dz),
 				1 / (EXTENT << dz),
 				0
@@ -51618,7 +51652,7 @@ var Terrain = class {
 	pointCoordinate(p) {
 		this.painter.maybeDrawDepth(true);
 		this.painter.maybeDrawCoords();
-		const rgba = new Uint8Array(4);
+		const rgba = /* @__PURE__ */ new Uint8Array(4);
 		const context = this.painter.context, gl = context.gl;
 		const px = Math.round(p.x * this.painter.pixelRatio / devicePixelRatio);
 		const py = Math.round(p.y * this.painter.pixelRatio / devicePixelRatio);
@@ -51641,7 +51675,7 @@ var Terrain = class {
 	* @returns depth value in clip space (between 0 and 1)
 	*/
 	depthAtPoint(p) {
-		const rgba = new Uint8Array(4);
+		const rgba = /* @__PURE__ */ new Uint8Array(4);
 		const context = this.painter.context, gl = context.gl;
 		context.bindFramebuffer.set(this.getFramebuffer("depth").framebuffer);
 		gl.readPixels(p.x, this.painter.height / devicePixelRatio - p.y - 1, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, rgba);
@@ -60460,7 +60494,7 @@ function buildStyle() {
 const styleLocations = locationsWithTileID(features).filter((v) => v.zoom < 15);
 window.maplibreglBenchmarks = window.maplibreglBenchmarks || {};
 setWorkerUrl(new URL("./benchmarks_worker.mjs", import.meta.url).toString());
-const version = "main 086a99b";
+const version = "main b69af1a";
 function register(name, bench) {
 	window.maplibreglBenchmarks[name] = window.maplibreglBenchmarks[name] || {};
 	window.maplibreglBenchmarks[name][version] = bench;

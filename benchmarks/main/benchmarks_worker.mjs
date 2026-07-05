@@ -740,6 +740,36 @@ function degreesToRadians(degrees) {
 	return degrees * Math.PI / 180;
 }
 //#endregion
+//#region src/util/abort_error.ts
+/**
+* An error message to use when an operation is aborted
+*/
+const ABORT_ERROR = "AbortError";
+var AbortError = class extends Error {
+	constructor(messageOrError = ABORT_ERROR) {
+		super(messageOrError instanceof Error ? messageOrError.message : messageOrError);
+		this.name = ABORT_ERROR;
+		if (messageOrError instanceof Error && messageOrError.stack) this.stack = messageOrError.stack;
+	}
+};
+/**
+* Check if an error is an abort error
+* @param error - An error object
+* @returns - true if the error is an abort error
+*/
+function isAbortError(error) {
+	return error instanceof Error && error.name === "AbortError";
+}
+/**
+* Throws an AbortError if the provided abort signal has already been aborted.
+*
+* @param signal - The abort signal to check.
+* @throws AbortError If the signal is aborted.
+*/
+function throwIfAborted(signal) {
+	if (signal.aborted) throw new AbortError(signal.reason);
+}
+//#endregion
 //#region src/util/transferable_grid_index.ts
 const NUM_PARAMS = 3;
 var TransferableGridIndex = class TransferableGridIndex {
@@ -4993,7 +5023,7 @@ var RuntimeError = class extends Error {
 	}
 };
 /** Set of valid anchor positions, as a set for validation */
-const anchors = new Set([
+const anchors = /* @__PURE__ */ new Set([
 	"center",
 	"left",
 	"right",
@@ -7465,7 +7495,7 @@ function rgba(ctx, [r, g, b, a]) {
 	return new Color(r / 255, g / 255, b / 255, alpha, false);
 }
 function has(key, obj) {
-	return key in obj;
+	return key in obj && obj[key] !== void 0;
 }
 function get(key, obj) {
 	const v = obj[key];
@@ -7806,7 +7836,11 @@ CompoundExpression.register(expressions, {
 	"filter-has": [
 		BooleanType,
 		[ValueType],
-		(ctx, [k]) => k.value in ctx.properties()
+		(ctx, [k]) => {
+			const key = k.value;
+			const props = ctx.properties();
+			return key in props && props[key] !== void 0;
+		}
 	],
 	"filter-has-id": [
 		BooleanType,
@@ -8445,6 +8479,7 @@ function isExpressionFilter(filter) {
 	}
 }
 function getFilterPropertyExpression(property) {
+	if (property === "$type") return ["geometry-type"];
 	if (property === "$id") return ["id"];
 	return ["get", property];
 }
@@ -8457,11 +8492,6 @@ function getLegacyFilterExpressionSuggestion(filter) {
 		case ">":
 		case ">=":
 			if (filter.length !== 3 || typeof filter[1] !== "string") return null;
-			if (filter[1] === "$type") return [filter[0], [
-				"in",
-				["geometry-type"],
-				["literal", [filter[2], `Multi${filter[2]}`]]
-			]];
 			return [
 				filter[0],
 				getFilterPropertyExpression(filter[1]),
@@ -8470,15 +8500,10 @@ function getLegacyFilterExpressionSuggestion(filter) {
 		case "in":
 		case "!in": {
 			if (filter.length < 2 || typeof filter[1] !== "string") return null;
-			let expression = [
+			const expression = [
 				"in",
 				getFilterPropertyExpression(filter[1]),
 				["literal", filter.slice(2)]
-			];
-			if (filter[1] === "$type") expression = [
-				"in",
-				["geometry-type"],
-				["literal", filter.slice(2).map((g) => [g, `Multi${g}`]).flat()]
 			];
 			return filter[0] === "!in" ? ["!", expression] : expression;
 		}
@@ -9779,36 +9804,6 @@ function createVisibility(visibility, globalState) {
 	return new VisibilityExpressionClass(visibility, globalState);
 }
 //#endregion
-//#region src/util/abort_error.ts
-/**
-* An error message to use when an operation is aborted
-*/
-const ABORT_ERROR = "AbortError";
-var AbortError = class extends Error {
-	constructor(messageOrError = ABORT_ERROR) {
-		super(messageOrError instanceof Error ? messageOrError.message : messageOrError);
-		this.name = ABORT_ERROR;
-		if (messageOrError instanceof Error && messageOrError.stack) this.stack = messageOrError.stack;
-	}
-};
-/**
-* Check if an error is an abort error
-* @param error - An error object
-* @returns - true if the error is an abort error
-*/
-function isAbortError(error) {
-	return error instanceof Error && error.name === "AbortError";
-}
-/**
-* Throws an AbortError if the provided abort signal has already been aborted.
-*
-* @param signal - The abort signal to check.
-* @throws AbortError If the signal is aborted.
-*/
-function throwIfAborted(signal) {
-	if (signal.aborted) throw new AbortError(signal.reason);
-}
-//#endregion
 //#region src/util/config.ts
 const config = {
 	MAX_PARALLEL_IMAGE_REQUESTS: 16,
@@ -10124,6 +10119,7 @@ function serialize(input, transferables) {
 			if (!input.hasOwnProperty(key)) continue;
 			if (registry[classRegistryKey].omit.includes(key)) continue;
 			const property = input[key];
+			if (property === void 0) continue;
 			properties[key] = registry[classRegistryKey].shallow.includes(key) ? property : serialize(property, transferables);
 		}
 		if (input instanceof Error) properties.message = input.message;
@@ -10228,6 +10224,7 @@ var Actor = class {
 					sourceMapId: this.mapId
 				};
 				this.target.postMessage(cancelMessage);
+				reject(new AbortError(abortController.signal.reason));
 			}, addEventDefaultOptions) : null;
 			this.resolveRejects[id] = {
 				resolve: (value) => {
@@ -14322,7 +14319,10 @@ var Texture = class {
 * surrounding pixel values to compute the slope at that pixel, and we cannot accurately calculate the slope at pixels on a
 * tile's edge without backfilling from neighboring tiles.
 */
-var DEMData = class {
+var DEMData = class DEMData {
+	static {
+		this.byteViewCache = /* @__PURE__ */ new WeakMap();
+	}
 	/**
 	* Constructs a `DEMData` object
 	* @param uid - the tile's unique id
@@ -14348,6 +14348,7 @@ var DEMData = class {
 		this.stride = data.height;
 		const dim = this.dim = data.height - 2;
 		this.data = new Uint32Array(data.data.buffer);
+		DEMData.byteViewCache.set(this, new Uint8Array(this.data.buffer));
 		switch (encoding) {
 			case "terrarium":
 				this.redFactor = 256;
@@ -14378,18 +14379,35 @@ var DEMData = class {
 		this.data[this._idx(dim, -1)] = this.data[this._idx(dim - 1, 0)];
 		this.data[this._idx(-1, dim)] = this.data[this._idx(0, dim - 1)];
 		this.data[this._idx(dim, dim)] = this.data[this._idx(dim - 1, dim - 1)];
+		const pixels = this._getByteView();
 		this.min = Number.MAX_SAFE_INTEGER;
 		this.max = Number.MIN_SAFE_INTEGER;
 		for (let x = 0; x < dim; x++) for (let y = 0; y < dim; y++) {
-			const ele = this.get(x, y);
+			const index = this._idx(x, y) * 4;
+			const ele = this._unpackAtIndex(pixels, index);
 			if (ele > this.max) this.max = ele;
 			if (ele < this.min) this.min = ele;
 		}
 	}
 	get(x, y) {
-		const pixels = new Uint8Array(this.data.buffer);
+		const pixels = this._getByteView();
 		const index = this._idx(x, y) * 4;
-		return this.unpack(pixels[index], pixels[index + 1], pixels[index + 2]);
+		return this._unpackAtIndex(pixels, index);
+	}
+	sampleBilinear(x, y) {
+		const cx = Math.floor(x);
+		const cy = Math.floor(y);
+		if (cx < -1 || cx >= this.dim || cy < -1 || cy >= this.dim) throw new RangeError(`Out of range source coordinates for DEM data. x: ${x}, y: ${y}, dim: ${this.dim}`);
+		const pixels = this._getByteView();
+		const index = ((cy + 1) * this.stride + cx + 1) * 4;
+		const strideByteWidth = this.stride * 4;
+		const tx = x - cx;
+		const ty = y - cy;
+		const z00 = this._unpackAtIndex(pixels, index);
+		const z10 = this._unpackAtIndex(pixels, index + 4);
+		const z01 = this._unpackAtIndex(pixels, index + strideByteWidth);
+		const z11 = this._unpackAtIndex(pixels, index + strideByteWidth + 4);
+		return z00 * (1 - tx) * (1 - ty) + z10 * tx * (1 - ty) + z01 * (1 - tx) * ty + z11 * tx * ty;
 	}
 	getUnpackVector() {
 		return [
@@ -14413,7 +14431,7 @@ var DEMData = class {
 		return new RGBAImage({
 			width: this.stride,
 			height: this.stride
-		}, new Uint8Array(this.data.buffer));
+		}, this._getByteView());
 	}
 	backfillBorder(borderTile, dx, dy) {
 		if (this.dim !== borderTile.dim) throw new Error("dem dimension mismatch");
@@ -14437,6 +14455,17 @@ var DEMData = class {
 		const ox = -dx * this.dim;
 		const oy = -dy * this.dim;
 		for (let y = yMin; y < yMax; y++) for (let x = xMin; x < xMax; x++) this.data[this._idx(x, y)] = borderTile.data[this._idx(x + ox, y + oy)];
+	}
+	_getByteView() {
+		let byteView = DEMData.byteViewCache.get(this);
+		if (byteView?.buffer !== this.data.buffer) {
+			byteView = new Uint8Array(this.data.buffer);
+			DEMData.byteViewCache.set(this, byteView);
+		}
+		return byteView;
+	}
+	_unpackAtIndex(pixels, index) {
+		return this.unpack(pixels[index], pixels[index + 1], pixels[index + 2]);
 	}
 };
 function packDEMData(v, unpackVector) {
@@ -16510,7 +16539,707 @@ function projectQueryGeometry(queryGeometry, pixelPosMatrix, z) {
 	return projectedQueryGeometry;
 }
 //#endregion
-//#region node_modules/kdbush/index.js
+//#region node_modules/@maplibre/geojson-vt/dist/geojson-vt.mjs
+/**
+* calculate simplification data using optimized Douglas-Peucker algorithm
+* @param coords - flat array of coordinates
+* @param first - index of the first coordinate in the segment
+* @param last - index of the last coordinate in the segment
+* @param sqTolerance - square tolerance value
+*/
+function simplify(coords, first, last, sqTolerance) {
+	let maxSqDist = sqTolerance;
+	const mid = first + (last - first >> 1);
+	let minPosToMid = last - first;
+	let index;
+	const ax = coords[first];
+	const ay = coords[first + 1];
+	const bx = coords[last];
+	const by = coords[last + 1];
+	for (let i = first + 3; i < last; i += 3) {
+		const d = getSqSegDist(coords[i], coords[i + 1], ax, ay, bx, by);
+		if (d > maxSqDist) {
+			index = i;
+			maxSqDist = d;
+			continue;
+		}
+		if (d === maxSqDist) {
+			const posToMid = Math.abs(i - mid);
+			if (posToMid < minPosToMid) {
+				index = i;
+				minPosToMid = posToMid;
+			}
+		}
+	}
+	if (maxSqDist > sqTolerance) {
+		if (index - first > 3) simplify(coords, first, index, sqTolerance);
+		coords[index + 2] = maxSqDist;
+		if (last - index > 3) simplify(coords, index, last, sqTolerance);
+	}
+}
+/**
+* Claculates the square distance from a point to a segment
+* @param px - x coordinate of the point
+* @param py - y coordinate of the point
+* @param x - x coordinate of the first segment endpoint
+* @param y - y coordinate of the first segment endpoint
+* @param bx - x coordinate of the second segment endpoint
+* @param by - y coordinate of the second segment endpoint
+* @returns square distance from a point to a segment
+*/
+function getSqSegDist(px, py, x, y, bx, by) {
+	let dx = bx - x;
+	let dy = by - y;
+	if (dx !== 0 || dy !== 0) {
+		const t = ((px - x) * dx + (py - y) * dy) / (dx * dx + dy * dy);
+		if (t > 1) {
+			x = bx;
+			y = by;
+		} else if (t > 0) {
+			x += dx * t;
+			y += dy * t;
+		}
+	}
+	dx = px - x;
+	dy = py - y;
+	return dx * dx + dy * dy;
+}
+/**
+* 
+* @param id - the feature's ID
+* @param type - the feature's type
+* @param geom - the feature's geometry
+* @param tags - the feature's properties
+* @returns the created feature
+*/
+function createFeature(id, type, geom, tags) {
+	const data = {
+		type,
+		geom
+	};
+	const feature = {
+		id: id == null ? null : id,
+		type: data.type,
+		geometry: data.geom,
+		tags,
+		minX: Infinity,
+		minY: Infinity,
+		maxX: -Infinity,
+		maxY: -Infinity
+	};
+	switch (data.type) {
+		case "Point":
+		case "MultiPoint":
+			calcLineBBox(feature, data.geom);
+			break;
+		case "LineString":
+			calcLineBBox(feature, data.geom.points);
+			break;
+		case "Polygon":
+			calcLineBBox(feature, data.geom[0].points);
+			break;
+		case "MultiLineString":
+			for (const line of data.geom) calcLineBBox(feature, line.points);
+			break;
+		case "MultiPolygon":
+			for (const polygon of data.geom) calcLineBBox(feature, polygon[0].points);
+			break;
+	}
+	return feature;
+}
+function optimizeLineMemory(line) {
+	const lineImmutable = line;
+	if (line.points.length > 64) lineImmutable.points = new Float64Array(line.points);
+}
+function calcLineBBox(feature, geom) {
+	for (let i = 0; i < geom.length; i += 3) {
+		feature.minX = Math.min(feature.minX, geom[i]);
+		feature.minY = Math.min(feature.minY, geom[i + 1]);
+		feature.maxX = Math.max(feature.maxX, geom[i]);
+		feature.maxY = Math.max(feature.maxY, geom[i + 1]);
+	}
+}
+const MAX_GEOMETRY_COLLECTION_DEPTH = 1024;
+/**
+* converts GeoJSON to internal source features (an intermediate projected JSON vector format with simplification data)
+* @param data
+* @param options
+* @returns
+*/
+function convertToInternal(data, options) {
+	const features = [];
+	switch (data.type) {
+		case "FeatureCollection":
+			for (let i = 0; i < data.features.length; i++) featureToInternal(features, data.features[i], options, i);
+			break;
+		case "Feature":
+			featureToInternal(features, data, options);
+			break;
+		default: featureToInternal(features, {
+			type: "Feature",
+			geometry: data,
+			properties: void 0
+		}, options);
+	}
+	return features;
+}
+function featureToInternal(features, geojson, options, index, depth = 0) {
+	if (!geojson.geometry) return;
+	if (depth > MAX_GEOMETRY_COLLECTION_DEPTH) throw new Error("GeometryCollection nesting exceeds supported depth: 1024");
+	if (geojson.geometry.type === "GeometryCollection") {
+		convertGeometryCollection(features, geojson, geojson.geometry, options, index, depth + 1);
+		return;
+	}
+	if (!geojson.geometry.coordinates?.length) return;
+	const id = getFeatureId(geojson, options, index);
+	const tolerance = Math.pow(options.tolerance / ((1 << options.maxZoom) * options.extent), 2);
+	switch (geojson.geometry.type) {
+		case "Point":
+			convertPointFeature(features, id, geojson.geometry, geojson.properties);
+			return;
+		case "MultiPoint":
+			convertMultiPointFeature(features, id, geojson.geometry, geojson.properties);
+			return;
+		case "LineString":
+			convertLineStringFeature(features, id, geojson.geometry, tolerance, geojson.properties);
+			return;
+		case "MultiLineString":
+			convertMultiLineStringFeature(features, id, geojson.geometry, tolerance, options, geojson.properties);
+			return;
+		case "Polygon":
+			convertPolygonFeature(features, id, geojson.geometry, tolerance, geojson.properties);
+			return;
+		case "MultiPolygon":
+			convertMultiPolygonFeature(features, id, geojson.geometry, tolerance, geojson.properties);
+			return;
+		default: throw new Error("Input data is not a valid GeoJSON object.");
+	}
+}
+function getFeatureId(geojson, options, index) {
+	if (options.promoteId) return geojson.properties?.[options.promoteId];
+	if (options.generateId) return index || 0;
+	return geojson.id;
+}
+function convertGeometryCollection(features, geojson, geometry, options, index, depth = 0) {
+	for (const geom of geometry.geometries) featureToInternal(features, {
+		id: geojson.id,
+		type: "Feature",
+		geometry: geom,
+		properties: geojson.properties
+	}, options, index, depth);
+}
+function convertPointFeature(features, id, geom, properties) {
+	const out = [];
+	out.push(projectX(geom.coordinates[0]), projectY(geom.coordinates[1]), 0);
+	features.push(createFeature(id, "Point", out, properties));
+}
+function convertMultiPointFeature(features, id, geom, properties) {
+	const out = [];
+	for (const coords of geom.coordinates) out.push(projectX(coords[0]), projectY(coords[1]), 0);
+	features.push(createFeature(id, "MultiPoint", out, properties));
+}
+function convertLineStringFeature(features, id, geom, tolerance, properties) {
+	const out = { points: [] };
+	convertLine(geom.coordinates, out, tolerance, false);
+	features.push(createFeature(id, "LineString", out, properties));
+}
+function convertMultiLineStringFeature(features, id, geom, tolerance, options, properties) {
+	if (options.lineMetrics) for (const line of geom.coordinates) {
+		const out = { points: [] };
+		convertLine(line, out, tolerance, false);
+		features.push(createFeature(id, "LineString", out, properties));
+	}
+	else {
+		const out = [];
+		convertLines(geom.coordinates, out, tolerance, false);
+		features.push(createFeature(id, "MultiLineString", out, properties));
+	}
+}
+function convertPolygonFeature(features, id, geom, tolerance, properties) {
+	const out = [];
+	convertLines(geom.coordinates, out, tolerance, true);
+	features.push(createFeature(id, "Polygon", out, properties));
+}
+function convertMultiPolygonFeature(features, id, geom, tolerance, properties) {
+	const out = [];
+	for (const polygon of geom.coordinates) {
+		const polygonOut = [];
+		convertLines(polygon, polygonOut, tolerance, true);
+		out.push(polygonOut);
+	}
+	features.push(createFeature(id, "MultiPolygon", out, properties));
+}
+function convertLine(ring, out, tolerance, isPolygon) {
+	let x0, y0;
+	let size = 0;
+	for (let j = 0; j < ring.length; j++) {
+		const x = projectX(ring[j][0]);
+		const y = projectY(ring[j][1]);
+		out.points.push(x, y, 0);
+		if (j > 0) if (isPolygon) size += (x0 * y - x * y0) / 2;
+		else size += Math.sqrt(Math.pow(x - x0, 2) + Math.pow(y - y0, 2));
+		x0 = x;
+		y0 = y;
+	}
+	const last = out.points.length - 3;
+	out.points[2] = 1;
+	if (tolerance > 0) simplify(out.points, 0, last, tolerance);
+	out.points[last + 2] = 1;
+	optimizeLineMemory(out);
+	out.size = Math.abs(size);
+	out.start = 0;
+	out.end = out.size;
+}
+function convertLines(rings, out, tolerance, isPolygon) {
+	for (let i = 0; i < rings.length; i++) {
+		const geom = { points: [] };
+		convertLine(rings[i], geom, tolerance, isPolygon);
+		out.push(geom);
+	}
+}
+/**
+* Convert longitude to spherical mercator in [0..1] range
+*/
+function projectX(x) {
+	return x / 360 + .5;
+}
+/**
+* Convert latitude to spherical mercator in [0..1] range
+*/
+function projectY(y) {
+	const sin = Math.sin(y * Math.PI / 180);
+	const y2 = .5 - .25 * Math.log((1 + sin) / (1 - sin)) / Math.PI;
+	return y2 < 0 ? 0 : y2 > 1 ? 1 : y2;
+}
+/**
+* Converts internal source features back to GeoJSON format.
+*/
+function convertToGeoJSON(source) {
+	return {
+		type: "FeatureCollection",
+		features: source.map((feature) => featureToGeoJSON(feature))
+	};
+}
+/**
+* Converts a single internal feature to GeoJSON format.
+*/
+function featureToGeoJSON(feature) {
+	const geojsonFeature = {
+		type: "Feature",
+		geometry: geometryToGeoJSON(feature),
+		properties: feature.tags
+	};
+	if (feature.id != null) geojsonFeature.id = feature.id;
+	return geojsonFeature;
+}
+/**
+* Converts a single internal feature geometry to GeoJSON format.
+*/
+function geometryToGeoJSON(feature) {
+	const { type, geometry } = feature;
+	switch (type) {
+		case "Point": return {
+			type,
+			coordinates: unprojectPoint(geometry[0], geometry[1])
+		};
+		case "MultiPoint": return {
+			type,
+			coordinates: unprojectPoints(geometry)
+		};
+		case "LineString": return {
+			type,
+			coordinates: unprojectPoints(geometry.points)
+		};
+		case "MultiLineString":
+		case "Polygon": return {
+			type,
+			coordinates: geometry.map((ring) => unprojectPoints(ring.points))
+		};
+		case "MultiPolygon": return {
+			type,
+			coordinates: geometry.map((polygon) => polygon.map((ring) => unprojectPoints(ring.points)))
+		};
+	}
+}
+function unprojectPoints(coords) {
+	const result = [];
+	for (let i = 0; i < coords.length; i += 3) result.push(unprojectPoint(coords[i], coords[i + 1]));
+	return result;
+}
+function unprojectPoint(x, y) {
+	return [unprojectX(x), unprojectY(y)];
+}
+/**
+* Convert spherical mercator in [0..1] range to longitude
+*/
+function unprojectX(x) {
+	return (x - .5) * 360;
+}
+/**
+* Convert spherical mercator in [0..1] range to latitude
+*/
+function unprojectY(y) {
+	const y2 = (180 - y * 360) * Math.PI / 180;
+	return 360 * Math.atan(Math.exp(y2)) / Math.PI - 90;
+}
+/** 
+* clip features between two vertical or horizontal axis-parallel lines:
+*     |        |
+*  ___|___     |     /
+* /   |   \____|____/
+*     |        |
+*
+* @param features - the features to clip
+* @param scale - the scale to divide start and end inputs
+* @param start - the start of the clip range
+* @param end - the end of the clip range
+* @param axis - which axis to clip against
+* @param minAll - the minimum for all features in the relevant axis
+* @param maxAll - the maximum for all features in the relevant axis
+*/
+function clip(features, scale, start, end, axis, minAll, maxAll, options) {
+	start /= scale;
+	end /= scale;
+	if (minAll >= start && maxAll < end) return features;
+	if (maxAll < start || minAll >= end) return null;
+	const clipped = [];
+	for (const feature of features) {
+		const min = axis === 0 ? feature.minX : feature.minY;
+		const max = axis === 0 ? feature.maxX : feature.maxY;
+		if (min >= start && max < end) {
+			clipped.push(feature);
+			continue;
+		}
+		if (max < start || min >= end) continue;
+		switch (feature.type) {
+			case "Point":
+			case "MultiPoint":
+				clipPointFeature(feature, clipped, start, end, axis);
+				continue;
+			case "LineString":
+				clipLineStringFeature(feature, clipped, start, end, axis, options);
+				continue;
+			case "MultiLineString":
+				clipMultiLineStringFeature(feature, clipped, start, end, axis);
+				continue;
+			case "Polygon":
+				clipPolygonFeature(feature, clipped, start, end, axis);
+				continue;
+			case "MultiPolygon":
+				clipMultiPolygonFeature(feature, clipped, start, end, axis);
+				continue;
+		}
+	}
+	if (!clipped.length) return null;
+	return clipped;
+}
+function clipPointFeature(feature, clipped, start, end, axis) {
+	const geom = [];
+	clipPoints$1(feature.geometry, geom, start, end, axis);
+	if (!geom.length) return;
+	const type = geom.length === 3 ? "Point" : "MultiPoint";
+	clipped.push(createFeature(feature.id, type, geom, feature.tags));
+}
+function clipLineStringFeature(feature, clipped, start, end, axis, options) {
+	const geom = [];
+	clipLine$1(feature.geometry, geom, start, end, axis, false, options.lineMetrics);
+	if (!geom.length) return;
+	if (options.lineMetrics) {
+		for (const line of geom) clipped.push(createFeature(feature.id, "LineString", line, feature.tags));
+		return;
+	}
+	if (geom.length > 1) {
+		clipped.push(createFeature(feature.id, "MultiLineString", geom, feature.tags));
+		return;
+	}
+	clipped.push(createFeature(feature.id, "LineString", geom[0], feature.tags));
+}
+function clipMultiLineStringFeature(feature, clipped, start, end, axis) {
+	const geom = [];
+	clipLines$1(feature.geometry, geom, start, end, axis, false);
+	if (!geom.length) return;
+	if (geom.length === 1) {
+		clipped.push(createFeature(feature.id, "LineString", geom[0], feature.tags));
+		return;
+	}
+	clipped.push(createFeature(feature.id, "MultiLineString", geom, feature.tags));
+}
+function clipPolygonFeature(feature, clipped, start, end, axis) {
+	const geom = [];
+	clipLines$1(feature.geometry, geom, start, end, axis, true);
+	if (!geom.length) return;
+	clipped.push(createFeature(feature.id, "Polygon", geom, feature.tags));
+}
+function clipMultiPolygonFeature(feature, clipped, start, end, axis) {
+	const geom = [];
+	for (const polygon of feature.geometry) {
+		const newPolygon = [];
+		clipLines$1(polygon, newPolygon, start, end, axis, true);
+		if (!newPolygon.length) continue;
+		geom.push(newPolygon);
+	}
+	if (!geom.length) return;
+	clipped.push(createFeature(feature.id, "MultiPolygon", geom, feature.tags));
+}
+function clipPoints$1(geom, newGeom, start, end, axis) {
+	for (let i = 0; i < geom.length; i += 3) {
+		const a = geom[i + axis];
+		if (a >= start && a <= end) addPoint(newGeom, geom[i], geom[i + 1], geom[i + 2]);
+	}
+}
+function clipLine$1(geom, newGeom, start, end, axis, isPolygon, trackMetrics) {
+	let slice = newSlice(geom);
+	const intersect = axis === 0 ? intersectX : intersectY;
+	let len = geom.start;
+	let segLen, t;
+	for (let i = 0; i < geom.points.length - 3; i += 3) {
+		const ax = geom.points[i];
+		const ay = geom.points[i + 1];
+		const az = geom.points[i + 2];
+		const bx = geom.points[i + 3];
+		const by = geom.points[i + 4];
+		const a = axis === 0 ? ax : ay;
+		const b = axis === 0 ? bx : by;
+		let exited = false;
+		if (trackMetrics) segLen = Math.sqrt(Math.pow(ax - bx, 2) + Math.pow(ay - by, 2));
+		if (a < start) {
+			if (b > start) {
+				t = intersect(slice, ax, ay, bx, by, start);
+				if (trackMetrics) slice.start = len + segLen * t;
+			}
+		} else if (a > end) {
+			if (b < end) {
+				t = intersect(slice, ax, ay, bx, by, end);
+				if (trackMetrics) slice.start = len + segLen * t;
+			}
+		} else addPoint(slice.points, ax, ay, az);
+		if (b < start && a >= start) {
+			t = intersect(slice, ax, ay, bx, by, start);
+			exited = true;
+		}
+		if (b > end && a <= end) {
+			t = intersect(slice, ax, ay, bx, by, end);
+			exited = true;
+		}
+		if (!isPolygon && exited) {
+			if (trackMetrics) slice.end = len + segLen * t;
+			newGeom.push(slice);
+			slice = newSlice(geom);
+		}
+		if (trackMetrics) len += segLen;
+	}
+	let last = geom.points.length - 3;
+	const ax = geom.points[last];
+	const ay = geom.points[last + 1];
+	const az = geom.points[last + 2];
+	const a = axis === 0 ? ax : ay;
+	if (a >= start && a <= end) addPoint(slice.points, ax, ay, az);
+	last = slice.points.length - 3;
+	if (isPolygon && last >= 3 && (slice.points[last] !== slice.points[0] || slice.points[last + 1] !== slice.points[1])) addPoint(slice.points, slice.points[0], slice.points[1], slice.points[2]);
+	if (slice.points.length) {
+		optimizeLineMemory(slice);
+		newGeom.push(slice);
+	}
+}
+function newSlice(line) {
+	return {
+		points: [],
+		size: line.size,
+		start: line.start,
+		end: line.end
+	};
+}
+function clipLines$1(geom, newGeom, start, end, axis, isPolygon) {
+	for (const line of geom) clipLine$1(line, newGeom, start, end, axis, isPolygon, false);
+}
+function addPoint(out, x, y, z) {
+	out.push(x, y, z);
+}
+function intersectX(out, ax, ay, bx, by, x) {
+	const t = (x - ax) / (bx - ax);
+	addPoint(out.points, x, ay + (by - ay) * t, 1);
+	return t;
+}
+function intersectY(out, ax, ay, bx, by, y) {
+	const t = (y - ay) / (by - ay);
+	addPoint(out.points, ax + (bx - ax) * t, y, 1);
+	return t;
+}
+function wrap(features, options) {
+	const buffer = options.buffer / options.extent;
+	let merged = features;
+	const left = clip(features, 1, -1 - buffer, buffer, 0, -1, 2, options);
+	const right = clip(features, 1, 1 - buffer, 2 + buffer, 0, -1, 2, options);
+	if (!left && !right) return merged;
+	merged = clip(features, 1, -buffer, 1 + buffer, 0, -1, 2, options) || [];
+	if (left) merged = shiftFeatureCoords(left, 1).concat(merged);
+	if (right) merged = merged.concat(shiftFeatureCoords(right, -1));
+	return merged;
+}
+function shiftFeatureCoords(features, offset) {
+	const newFeatures = [];
+	for (const feature of features) switch (feature.type) {
+		case "Point":
+		case "MultiPoint": {
+			const newGeometry = shiftPointCoords(feature.geometry, offset);
+			newFeatures.push(createFeature(feature.id, feature.type, newGeometry, feature.tags));
+			continue;
+		}
+		case "LineString": {
+			const newGeometry = shiftLineCoords(feature.geometry, offset);
+			newFeatures.push(createFeature(feature.id, feature.type, newGeometry, feature.tags));
+			continue;
+		}
+		case "MultiLineString":
+		case "Polygon": {
+			const newGeometry = [];
+			for (const line of feature.geometry) newGeometry.push(shiftLineCoords(line, offset));
+			newFeatures.push(createFeature(feature.id, feature.type, newGeometry, feature.tags));
+			continue;
+		}
+		case "MultiPolygon": {
+			const newGeometry = [];
+			for (const polygon of feature.geometry) {
+				const newPolygon = [];
+				for (const line of polygon) newPolygon.push(shiftLineCoords(line, offset));
+				newGeometry.push(newPolygon);
+			}
+			newFeatures.push(createFeature(feature.id, feature.type, newGeometry, feature.tags));
+			continue;
+		}
+	}
+	return newFeatures;
+}
+function shiftPointCoords(coords, offset) {
+	const newCoords = [];
+	for (let i = 0; i < coords.length; i += 3) newCoords.push(coords[i] + offset, coords[i + 1], coords[i + 2]);
+	return newCoords;
+}
+function shiftLineCoords(line, offset) {
+	const newLine = {
+		points: [],
+		size: line.size
+	};
+	if (line.start !== void 0) {
+		newLine.start = line.start;
+		newLine.end = line.end;
+	}
+	for (let i = 0; i < line.points.length; i += 3) newLine.points.push(line.points[i] + offset, line.points[i + 1], line.points[i + 2]);
+	optimizeLineMemory(newLine);
+	return newLine;
+}
+/**
+* Applies a GeoJSON Source Diff to an existing set of simplified features
+* @param source 
+* @param dataDiff 
+* @param options 
+* @returns 
+*/
+function applySourceDiff(source, dataDiff, options) {
+	const diff = diffToHashed(dataDiff, options);
+	let affected = [];
+	if (diff.removeAll) {
+		affected = source;
+		source = [];
+	}
+	if (diff.remove.size || diff.add.size) {
+		const removeFeatures = [];
+		for (const feature of source) if (diff.remove.has(feature.id) || diff.add.has(feature.id)) removeFeatures.push(feature);
+		if (removeFeatures.length) {
+			affected = affected.concat(removeFeatures);
+			const removeIds = new Set(removeFeatures.map((f) => f.id));
+			source = source.filter((f) => !removeIds.has(f.id));
+		}
+		if (diff.add.size) {
+			let addFeatures = convertToInternal({
+				type: "FeatureCollection",
+				features: Array.from(diff.add.values())
+			}, options);
+			addFeatures = wrap(addFeatures, options);
+			affected = affected.concat(addFeatures);
+			source = source.concat(addFeatures);
+		}
+	}
+	if (diff.update.size) {
+		const oldFeaturesMap = /* @__PURE__ */ new Map();
+		let keepFeatures = [];
+		for (const feature of source) if (diff.update.has(feature.id)) oldFeaturesMap.set(feature.id, [...oldFeaturesMap.get(feature.id) || [], feature]);
+		else keepFeatures.push(feature);
+		for (const [id, update] of diff.update) {
+			const oldFeatures = oldFeaturesMap.get(id);
+			if (!oldFeatures || oldFeatures.length === 0) continue;
+			const updatedFeatures = getUpdatedFeatures(oldFeatures, update, options);
+			affected = affected.concat(oldFeatures, updatedFeatures);
+			keepFeatures = keepFeatures.concat(updatedFeatures);
+		}
+		source = keepFeatures;
+	}
+	return {
+		affected,
+		source
+	};
+}
+/**
+* Gets updated simplified feature(s) based on a diff update object.
+* @param vtFeatures - the original features
+* @param update - the update object to apply
+* @param options - the options to use for the wrap method
+* @returns Updated features. If geometry is updated, returns new feature(s) converted from geojson and wrapped. If only properties are updated, returns feature(s) with tags updated.
+*/
+function getUpdatedFeatures(vtFeatures, update, options) {
+	const changeGeometry = !!update.newGeometry;
+	const changeProps = update.removeAllProperties || update.removeProperties?.length > 0 || update.addOrUpdateProperties?.length > 0;
+	if (changeGeometry) {
+		const vtFeature = vtFeatures[0];
+		let features = convertToInternal({
+			type: "FeatureCollection",
+			features: [{
+				type: "Feature",
+				id: vtFeature.id,
+				geometry: update.newGeometry,
+				properties: changeProps ? applyPropertyUpdates(vtFeature.tags, update) : vtFeature.tags
+			}]
+		}, options);
+		features = wrap(features, options);
+		return features;
+	}
+	if (changeProps) {
+		const updated = [];
+		for (const vtFeature of vtFeatures) {
+			const feature = { ...vtFeature };
+			feature.tags = applyPropertyUpdates(feature.tags, update);
+			updated.push(feature);
+		}
+		return updated;
+	}
+	return vtFeatures;
+}
+/**
+* helper to apply property updates from a diff update object to a properties object
+*/
+function applyPropertyUpdates(tags, update) {
+	if (update.removeAllProperties) return {};
+	const properties = { ...tags || {} };
+	if (update.removeProperties) for (const key of update.removeProperties) delete properties[key];
+	if (update.addOrUpdateProperties) for (const { key, value } of update.addOrUpdateProperties) properties[key] = value;
+	return properties;
+}
+/**
+* Convert a GeoJSON Source Diff to an idempotent hashed representation using Sets and Maps
+*/
+function diffToHashed(diff, options) {
+	if (!diff) return {
+		remove: /* @__PURE__ */ new Set(),
+		add: /* @__PURE__ */ new Map(),
+		update: /* @__PURE__ */ new Map()
+	};
+	return {
+		removeAll: diff.removeAll,
+		remove: new Set(diff.remove || []),
+		add: new Map(diff.add?.map((feature) => [options.promoteId ? feature.properties[options.promoteId] : feature.id, feature])),
+		update: new Map(diff.update?.map((update) => [update.id, update]))
+	};
+}
 const ARRAY_TYPES = [
 	Int8Array,
 	Uint8Array,
@@ -16526,7 +17255,7 @@ const ARRAY_TYPES = [
 /** @typedef {Int8Array | Uint8Array | Uint8ClampedArray | Int16Array | Uint16Array | Int32Array | Uint32Array | Float32Array | Float64Array} TypedArray */
 const VERSION = 1;
 const HEADER_SIZE = 8;
-const STACK = new Uint32Array(96);
+const STACK = /* @__PURE__ */ new Uint32Array(96);
 var KDBush = class KDBush {
 	/**
 	* Creates an index from raw `ArrayBuffer` data.
@@ -16794,709 +17523,6 @@ function sqDist(ax, ay, bx, by) {
 	const dy = ay - by;
 	return dx * dx + dy * dy;
 }
-//#endregion
-//#region node_modules/@maplibre/geojson-vt/dist/geojson-vt.mjs
-/**
-* calculate simplification data using optimized Douglas-Peucker algorithm
-* @param coords - flat array of coordinates
-* @param first - index of the first coordinate in the segment
-* @param last - index of the last coordinate in the segment
-* @param sqTolerance - square tolerance value
-*/
-function simplify(coords, first, last, sqTolerance) {
-	let maxSqDist = sqTolerance;
-	const mid = first + (last - first >> 1);
-	let minPosToMid = last - first;
-	let index;
-	const ax = coords[first];
-	const ay = coords[first + 1];
-	const bx = coords[last];
-	const by = coords[last + 1];
-	for (let i = first + 3; i < last; i += 3) {
-		const d = getSqSegDist(coords[i], coords[i + 1], ax, ay, bx, by);
-		if (d > maxSqDist) {
-			index = i;
-			maxSqDist = d;
-			continue;
-		}
-		if (d === maxSqDist) {
-			const posToMid = Math.abs(i - mid);
-			if (posToMid < minPosToMid) {
-				index = i;
-				minPosToMid = posToMid;
-			}
-		}
-	}
-	if (maxSqDist > sqTolerance) {
-		if (index - first > 3) simplify(coords, first, index, sqTolerance);
-		coords[index + 2] = maxSqDist;
-		if (last - index > 3) simplify(coords, index, last, sqTolerance);
-	}
-}
-/**
-* Claculates the square distance from a point to a segment
-* @param px - x coordinate of the point
-* @param py - y coordinate of the point
-* @param x - x coordinate of the first segment endpoint
-* @param y - y coordinate of the first segment endpoint
-* @param bx - x coordinate of the second segment endpoint
-* @param by - y coordinate of the second segment endpoint
-* @returns square distance from a point to a segment
-*/
-function getSqSegDist(px, py, x, y, bx, by) {
-	let dx = bx - x;
-	let dy = by - y;
-	if (dx !== 0 || dy !== 0) {
-		const t = ((px - x) * dx + (py - y) * dy) / (dx * dx + dy * dy);
-		if (t > 1) {
-			x = bx;
-			y = by;
-		} else if (t > 0) {
-			x += dx * t;
-			y += dy * t;
-		}
-	}
-	dx = px - x;
-	dy = py - y;
-	return dx * dx + dy * dy;
-}
-/**
-*
-* @param id - the feature's ID
-* @param type - the feature's type
-* @param geom - the feature's geometry
-* @param tags - the feature's properties
-* @returns the created feature
-*/
-function createFeature(id, type, geom, tags) {
-	const data = {
-		type,
-		geom
-	};
-	const feature = {
-		id: id == null ? null : id,
-		type: data.type,
-		geometry: data.geom,
-		tags,
-		minX: Infinity,
-		minY: Infinity,
-		maxX: -Infinity,
-		maxY: -Infinity
-	};
-	switch (data.type) {
-		case "Point":
-		case "MultiPoint":
-			calcLineBBox(feature, data.geom);
-			break;
-		case "LineString":
-			calcLineBBox(feature, data.geom.points);
-			break;
-		case "Polygon":
-			calcLineBBox(feature, data.geom[0].points);
-			break;
-		case "MultiLineString":
-			for (const line of data.geom) calcLineBBox(feature, line.points);
-			break;
-		case "MultiPolygon":
-			for (const polygon of data.geom) calcLineBBox(feature, polygon[0].points);
-			break;
-	}
-	return feature;
-}
-function optimizeLineMemory(line) {
-	const lineImmutable = line;
-	if (line.points.length > 64) lineImmutable.points = new Float64Array(line.points);
-}
-function calcLineBBox(feature, geom) {
-	for (let i = 0; i < geom.length; i += 3) {
-		feature.minX = Math.min(feature.minX, geom[i]);
-		feature.minY = Math.min(feature.minY, geom[i + 1]);
-		feature.maxX = Math.max(feature.maxX, geom[i]);
-		feature.maxY = Math.max(feature.maxY, geom[i + 1]);
-	}
-}
-/**
-* converts GeoJSON to internal source features (an intermediate projected JSON vector format with simplification data)
-* @param data
-* @param options
-* @returns
-*/
-function convertToInternal(data, options) {
-	const features = [];
-	switch (data.type) {
-		case "FeatureCollection":
-			for (let i = 0; i < data.features.length; i++) featureToInternal(features, data.features[i], options, i);
-			break;
-		case "Feature":
-			featureToInternal(features, data, options);
-			break;
-		default: featureToInternal(features, {
-			geometry: data,
-			properties: void 0
-		}, options);
-	}
-	return features;
-}
-function featureToInternal(features, geojson, options, index) {
-	if (!geojson.geometry) return;
-	if (geojson.geometry.type === "GeometryCollection") {
-		convertGeometryCollection(features, geojson, geojson.geometry, options, index);
-		return;
-	}
-	if (!geojson.geometry.coordinates?.length) return;
-	const id = getFeatureId(geojson, options, index);
-	const tolerance = Math.pow(options.tolerance / ((1 << options.maxZoom) * options.extent), 2);
-	switch (geojson.geometry.type) {
-		case "Point":
-			convertPointFeature(features, id, geojson.geometry, geojson.properties);
-			return;
-		case "MultiPoint":
-			convertMultiPointFeature(features, id, geojson.geometry, geojson.properties);
-			return;
-		case "LineString":
-			convertLineStringFeature(features, id, geojson.geometry, tolerance, geojson.properties);
-			return;
-		case "MultiLineString":
-			convertMultiLineStringFeature(features, id, geojson.geometry, tolerance, options, geojson.properties);
-			return;
-		case "Polygon":
-			convertPolygonFeature(features, id, geojson.geometry, tolerance, geojson.properties);
-			return;
-		case "MultiPolygon":
-			convertMultiPolygonFeature(features, id, geojson.geometry, tolerance, geojson.properties);
-			return;
-		default: throw new Error("Input data is not a valid GeoJSON object.");
-	}
-}
-function getFeatureId(geojson, options, index) {
-	if (options.promoteId) return geojson.properties?.[options.promoteId];
-	if (options.generateId) return index || 0;
-	return geojson.id;
-}
-function convertGeometryCollection(features, geojson, geometry, options, index) {
-	for (const geom of geometry.geometries) featureToInternal(features, {
-		id: geojson.id,
-		geometry: geom,
-		properties: geojson.properties
-	}, options, index);
-}
-function convertPointFeature(features, id, geom, properties) {
-	const out = [];
-	out.push(projectX(geom.coordinates[0]), projectY(geom.coordinates[1]), 0);
-	features.push(createFeature(id, "Point", out, properties));
-}
-function convertMultiPointFeature(features, id, geom, properties) {
-	const out = [];
-	for (const coords of geom.coordinates) out.push(projectX(coords[0]), projectY(coords[1]), 0);
-	features.push(createFeature(id, "MultiPoint", out, properties));
-}
-function convertLineStringFeature(features, id, geom, tolerance, properties) {
-	const out = { points: [] };
-	convertLine(geom.coordinates, out, tolerance, false);
-	features.push(createFeature(id, "LineString", out, properties));
-}
-function convertMultiLineStringFeature(features, id, geom, tolerance, options, properties) {
-	if (options.lineMetrics) for (const line of geom.coordinates) {
-		const out = { points: [] };
-		convertLine(line, out, tolerance, false);
-		features.push(createFeature(id, "LineString", out, properties));
-	}
-	else {
-		const out = [];
-		convertLines(geom.coordinates, out, tolerance, false);
-		features.push(createFeature(id, "MultiLineString", out, properties));
-	}
-}
-function convertPolygonFeature(features, id, geom, tolerance, properties) {
-	const out = [];
-	convertLines(geom.coordinates, out, tolerance, true);
-	features.push(createFeature(id, "Polygon", out, properties));
-}
-function convertMultiPolygonFeature(features, id, geom, tolerance, properties) {
-	const out = [];
-	for (const polygon of geom.coordinates) {
-		const polygonOut = [];
-		convertLines(polygon, polygonOut, tolerance, true);
-		out.push(polygonOut);
-	}
-	features.push(createFeature(id, "MultiPolygon", out, properties));
-}
-function convertLine(ring, out, tolerance, isPolygon) {
-	let x0, y0;
-	let size = 0;
-	for (let j = 0; j < ring.length; j++) {
-		const x = projectX(ring[j][0]);
-		const y = projectY(ring[j][1]);
-		out.points.push(x, y, 0);
-		if (j > 0) if (isPolygon) size += (x0 * y - x * y0) / 2;
-		else size += Math.sqrt(Math.pow(x - x0, 2) + Math.pow(y - y0, 2));
-		x0 = x;
-		y0 = y;
-	}
-	const last = out.points.length - 3;
-	out.points[2] = 1;
-	if (tolerance > 0) simplify(out.points, 0, last, tolerance);
-	out.points[last + 2] = 1;
-	optimizeLineMemory(out);
-	out.size = Math.abs(size);
-	out.start = 0;
-	out.end = out.size;
-}
-function convertLines(rings, out, tolerance, isPolygon) {
-	for (let i = 0; i < rings.length; i++) {
-		const geom = { points: [] };
-		convertLine(rings[i], geom, tolerance, isPolygon);
-		out.push(geom);
-	}
-}
-/**
-* Convert longitude to spherical mercator in [0..1] range
-*/
-function projectX(x) {
-	return x / 360 + .5;
-}
-/**
-* Convert latitude to spherical mercator in [0..1] range
-*/
-function projectY(y) {
-	const sin = Math.sin(y * Math.PI / 180);
-	const y2 = .5 - .25 * Math.log((1 + sin) / (1 - sin)) / Math.PI;
-	return y2 < 0 ? 0 : y2 > 1 ? 1 : y2;
-}
-/**
-* Converts internal source features back to GeoJSON format.
-*/
-function convertToGeoJSON(source) {
-	return {
-		type: "FeatureCollection",
-		features: source.map((feature) => featureToGeoJSON(feature))
-	};
-}
-/**
-* Converts a single internal feature to GeoJSON format.
-*/
-function featureToGeoJSON(feature) {
-	const geojsonFeature = {
-		type: "Feature",
-		geometry: geometryToGeoJSON(feature),
-		properties: feature.tags
-	};
-	if (feature.id != null) geojsonFeature.id = feature.id;
-	return geojsonFeature;
-}
-/**
-* Converts a single internal feature geometry to GeoJSON format.
-*/
-function geometryToGeoJSON(feature) {
-	const { type, geometry } = feature;
-	switch (type) {
-		case "Point": return {
-			type,
-			coordinates: unprojectPoint(geometry[0], geometry[1])
-		};
-		case "MultiPoint": return {
-			type,
-			coordinates: unprojectPoints(geometry)
-		};
-		case "LineString": return {
-			type,
-			coordinates: unprojectPoints(geometry.points)
-		};
-		case "MultiLineString":
-		case "Polygon": return {
-			type,
-			coordinates: geometry.map((ring) => unprojectPoints(ring.points))
-		};
-		case "MultiPolygon": return {
-			type,
-			coordinates: geometry.map((polygon) => polygon.map((ring) => unprojectPoints(ring.points)))
-		};
-	}
-}
-function unprojectPoints(coords) {
-	const result = [];
-	for (let i = 0; i < coords.length; i += 3) result.push(unprojectPoint(coords[i], coords[i + 1]));
-	return result;
-}
-function unprojectPoint(x, y) {
-	return [unprojectX(x), unprojectY(y)];
-}
-/**
-* Convert spherical mercator in [0..1] range to longitude
-*/
-function unprojectX(x) {
-	return (x - .5) * 360;
-}
-/**
-* Convert spherical mercator in [0..1] range to latitude
-*/
-function unprojectY(y) {
-	const y2 = (180 - y * 360) * Math.PI / 180;
-	return 360 * Math.atan(Math.exp(y2)) / Math.PI - 90;
-}
-var AxisType;
-(function(AxisType) {
-	AxisType[AxisType["X"] = 0] = "X";
-	AxisType[AxisType["Y"] = 1] = "Y";
-})(AxisType || (AxisType = {}));
-/**
-* clip features between two vertical or horizontal axis-parallel lines:
-*     |        |
-*  ___|___     |     /
-* /   |   \____|____/
-*     |        |
-*
-* @param features - the features to clip
-* @param scale - the scale to divide start and end inputs
-* @param start - the start of the clip range
-* @param end - the end of the clip range
-* @param axis - which axis to clip against
-* @param minAll - the minimum for all features in the relevant axis
-* @param maxAll - the maximum for all features in the relevant axis
-*/
-function clip(features, scale, start, end, axis, minAll, maxAll, options) {
-	start /= scale;
-	end /= scale;
-	if (minAll >= start && maxAll < end) return features;
-	if (maxAll < start || minAll >= end) return null;
-	const clipped = [];
-	for (const feature of features) {
-		const min = axis === AxisType.X ? feature.minX : feature.minY;
-		const max = axis === AxisType.X ? feature.maxX : feature.maxY;
-		if (min >= start && max < end) {
-			clipped.push(feature);
-			continue;
-		}
-		if (max < start || min >= end) continue;
-		switch (feature.type) {
-			case "Point":
-			case "MultiPoint":
-				clipPointFeature(feature, clipped, start, end, axis);
-				continue;
-			case "LineString":
-				clipLineStringFeature(feature, clipped, start, end, axis, options);
-				continue;
-			case "MultiLineString":
-				clipMultiLineStringFeature(feature, clipped, start, end, axis);
-				continue;
-			case "Polygon":
-				clipPolygonFeature(feature, clipped, start, end, axis);
-				continue;
-			case "MultiPolygon":
-				clipMultiPolygonFeature(feature, clipped, start, end, axis);
-				continue;
-		}
-	}
-	if (!clipped.length) return null;
-	return clipped;
-}
-function clipPointFeature(feature, clipped, start, end, axis) {
-	const geom = [];
-	clipPoints$1(feature.geometry, geom, start, end, axis);
-	if (!geom.length) return;
-	const type = geom.length === 3 ? "Point" : "MultiPoint";
-	clipped.push(createFeature(feature.id, type, geom, feature.tags));
-}
-function clipLineStringFeature(feature, clipped, start, end, axis, options) {
-	const geom = [];
-	clipLine$1(feature.geometry, geom, start, end, axis, false, options.lineMetrics);
-	if (!geom.length) return;
-	if (options.lineMetrics) {
-		for (const line of geom) clipped.push(createFeature(feature.id, "LineString", line, feature.tags));
-		return;
-	}
-	if (geom.length > 1) {
-		clipped.push(createFeature(feature.id, "MultiLineString", geom, feature.tags));
-		return;
-	}
-	clipped.push(createFeature(feature.id, "LineString", geom[0], feature.tags));
-}
-function clipMultiLineStringFeature(feature, clipped, start, end, axis) {
-	const geom = [];
-	clipLines$1(feature.geometry, geom, start, end, axis, false);
-	if (!geom.length) return;
-	if (geom.length === 1) {
-		clipped.push(createFeature(feature.id, "LineString", geom[0], feature.tags));
-		return;
-	}
-	clipped.push(createFeature(feature.id, "MultiLineString", geom, feature.tags));
-}
-function clipPolygonFeature(feature, clipped, start, end, axis) {
-	const geom = [];
-	clipLines$1(feature.geometry, geom, start, end, axis, true);
-	if (!geom.length) return;
-	clipped.push(createFeature(feature.id, "Polygon", geom, feature.tags));
-}
-function clipMultiPolygonFeature(feature, clipped, start, end, axis) {
-	const geom = [];
-	for (const polygon of feature.geometry) {
-		const newPolygon = [];
-		clipLines$1(polygon, newPolygon, start, end, axis, true);
-		if (!newPolygon.length) continue;
-		geom.push(newPolygon);
-	}
-	if (!geom.length) return;
-	clipped.push(createFeature(feature.id, "MultiPolygon", geom, feature.tags));
-}
-function clipPoints$1(geom, newGeom, start, end, axis) {
-	for (let i = 0; i < geom.length; i += 3) {
-		const a = geom[i + axis];
-		if (a >= start && a <= end) addPoint(newGeom, geom[i], geom[i + 1], geom[i + 2]);
-	}
-}
-function clipLine$1(geom, newGeom, start, end, axis, isPolygon, trackMetrics) {
-	let slice = newSlice(geom);
-	const intersect = axis === AxisType.X ? intersectX : intersectY;
-	let len = geom.start;
-	let segLen, t;
-	for (let i = 0; i < geom.points.length - 3; i += 3) {
-		const ax = geom.points[i];
-		const ay = geom.points[i + 1];
-		const az = geom.points[i + 2];
-		const bx = geom.points[i + 3];
-		const by = geom.points[i + 4];
-		const a = axis === AxisType.X ? ax : ay;
-		const b = axis === AxisType.X ? bx : by;
-		let exited = false;
-		if (trackMetrics) segLen = Math.sqrt(Math.pow(ax - bx, 2) + Math.pow(ay - by, 2));
-		if (a < start) {
-			if (b > start) {
-				t = intersect(slice, ax, ay, bx, by, start);
-				if (trackMetrics) slice.start = len + segLen * t;
-			}
-		} else if (a > end) {
-			if (b < end) {
-				t = intersect(slice, ax, ay, bx, by, end);
-				if (trackMetrics) slice.start = len + segLen * t;
-			}
-		} else addPoint(slice.points, ax, ay, az);
-		if (b < start && a >= start) {
-			t = intersect(slice, ax, ay, bx, by, start);
-			exited = true;
-		}
-		if (b > end && a <= end) {
-			t = intersect(slice, ax, ay, bx, by, end);
-			exited = true;
-		}
-		if (!isPolygon && exited) {
-			if (trackMetrics) slice.end = len + segLen * t;
-			newGeom.push(slice);
-			slice = newSlice(geom);
-		}
-		if (trackMetrics) len += segLen;
-	}
-	let last = geom.points.length - 3;
-	const ax = geom.points[last];
-	const ay = geom.points[last + 1];
-	const az = geom.points[last + 2];
-	const a = axis === AxisType.X ? ax : ay;
-	if (a >= start && a <= end) addPoint(slice.points, ax, ay, az);
-	last = slice.points.length - 3;
-	if (isPolygon && last >= 3 && (slice.points[last] !== slice.points[0] || slice.points[last + 1] !== slice.points[1])) addPoint(slice.points, slice.points[0], slice.points[1], slice.points[2]);
-	if (slice.points.length) {
-		optimizeLineMemory(slice);
-		newGeom.push(slice);
-	}
-}
-function newSlice(line) {
-	return {
-		points: [],
-		size: line.size,
-		start: line.start,
-		end: line.end
-	};
-}
-function clipLines$1(geom, newGeom, start, end, axis, isPolygon) {
-	for (const line of geom) clipLine$1(line, newGeom, start, end, axis, isPolygon, false);
-}
-function addPoint(out, x, y, z) {
-	out.push(x, y, z);
-}
-function intersectX(out, ax, ay, bx, by, x) {
-	const t = (x - ax) / (bx - ax);
-	addPoint(out.points, x, ay + (by - ay) * t, 1);
-	return t;
-}
-function intersectY(out, ax, ay, bx, by, y) {
-	const t = (y - ay) / (by - ay);
-	addPoint(out.points, ax + (bx - ax) * t, y, 1);
-	return t;
-}
-function wrap(features, options) {
-	const buffer = options.buffer / options.extent;
-	let merged = features;
-	const left = clip(features, 1, -1 - buffer, buffer, AxisType.X, -1, 2, options);
-	const right = clip(features, 1, 1 - buffer, 2 + buffer, AxisType.X, -1, 2, options);
-	if (!left && !right) return merged;
-	merged = clip(features, 1, -buffer, 1 + buffer, AxisType.X, -1, 2, options) || [];
-	if (left) merged = shiftFeatureCoords(left, 1).concat(merged);
-	if (right) merged = merged.concat(shiftFeatureCoords(right, -1));
-	return merged;
-}
-function shiftFeatureCoords(features, offset) {
-	const newFeatures = [];
-	for (const feature of features) switch (feature.type) {
-		case "Point":
-		case "MultiPoint": {
-			const newGeometry = shiftPointCoords(feature.geometry, offset);
-			newFeatures.push(createFeature(feature.id, feature.type, newGeometry, feature.tags));
-			continue;
-		}
-		case "LineString": {
-			const newGeometry = shiftLineCoords(feature.geometry, offset);
-			newFeatures.push(createFeature(feature.id, feature.type, newGeometry, feature.tags));
-			continue;
-		}
-		case "MultiLineString":
-		case "Polygon": {
-			const newGeometry = [];
-			for (const line of feature.geometry) newGeometry.push(shiftLineCoords(line, offset));
-			newFeatures.push(createFeature(feature.id, feature.type, newGeometry, feature.tags));
-			continue;
-		}
-		case "MultiPolygon": {
-			const newGeometry = [];
-			for (const polygon of feature.geometry) {
-				const newPolygon = [];
-				for (const line of polygon) newPolygon.push(shiftLineCoords(line, offset));
-				newGeometry.push(newPolygon);
-			}
-			newFeatures.push(createFeature(feature.id, feature.type, newGeometry, feature.tags));
-			continue;
-		}
-	}
-	return newFeatures;
-}
-function shiftPointCoords(coords, offset) {
-	const newCoords = [];
-	for (let i = 0; i < coords.length; i += 3) newCoords.push(coords[i] + offset, coords[i + 1], coords[i + 2]);
-	return newCoords;
-}
-function shiftLineCoords(line, offset) {
-	const newLine = {
-		points: [],
-		size: line.size
-	};
-	if (line.start !== void 0) {
-		newLine.start = line.start;
-		newLine.end = line.end;
-	}
-	for (let i = 0; i < line.points.length; i += 3) newLine.points.push(line.points[i] + offset, line.points[i + 1], line.points[i + 2]);
-	optimizeLineMemory(newLine);
-	return newLine;
-}
-/**
-* Applies a GeoJSON Source Diff to an existing set of simplified features
-* @param source
-* @param dataDiff
-* @param options
-* @returns
-*/
-function applySourceDiff(source, dataDiff, options) {
-	const diff = diffToHashed(dataDiff, options);
-	let affected = [];
-	if (diff.removeAll) {
-		affected = source;
-		source = [];
-	}
-	if (diff.remove.size || diff.add.size) {
-		const removeFeatures = [];
-		for (const feature of source) if (diff.remove.has(feature.id) || diff.add.has(feature.id)) removeFeatures.push(feature);
-		if (removeFeatures.length) {
-			affected.push(...removeFeatures);
-			const removeIds = new Set(removeFeatures.map((f) => f.id));
-			source = source.filter((f) => !removeIds.has(f.id));
-		}
-		if (diff.add.size) {
-			let addFeatures = convertToInternal({
-				type: "FeatureCollection",
-				features: Array.from(diff.add.values())
-			}, options);
-			addFeatures = wrap(addFeatures, options);
-			affected.push(...addFeatures);
-			source.push(...addFeatures);
-		}
-	}
-	if (diff.update.size) {
-		const oldFeaturesMap = /* @__PURE__ */ new Map();
-		const keepFeatures = [];
-		for (const feature of source) if (diff.update.has(feature.id)) oldFeaturesMap.set(feature.id, [...oldFeaturesMap.get(feature.id) || [], feature]);
-		else keepFeatures.push(feature);
-		for (const [id, update] of diff.update) {
-			const oldFeatures = oldFeaturesMap.get(id);
-			if (!oldFeatures || oldFeatures.length === 0) continue;
-			const updatedFeatures = getUpdatedFeatures(oldFeatures, update, options);
-			affected.push(...oldFeatures, ...updatedFeatures);
-			keepFeatures.push(...updatedFeatures);
-		}
-		source = keepFeatures;
-	}
-	return {
-		affected,
-		source
-	};
-}
-/**
-* Gets updated simplified feature(s) based on a diff update object.
-* @param vtFeatures - the original features
-* @param update - the update object to apply
-* @param options - the options to use for the wrap method
-* @returns Updated features. If geometry is updated, returns new feature(s) converted from geojson and wrapped. If only properties are updated, returns feature(s) with tags updated.
-*/
-function getUpdatedFeatures(vtFeatures, update, options) {
-	const changeGeometry = !!update.newGeometry;
-	const changeProps = update.removeAllProperties || update.removeProperties?.length > 0 || update.addOrUpdateProperties?.length > 0;
-	if (changeGeometry) {
-		const vtFeature = vtFeatures[0];
-		let features = convertToInternal({
-			type: "FeatureCollection",
-			features: [{
-				type: "Feature",
-				id: vtFeature.id,
-				geometry: update.newGeometry,
-				properties: changeProps ? applyPropertyUpdates(vtFeature.tags, update) : vtFeature.tags
-			}]
-		}, options);
-		features = wrap(features, options);
-		return features;
-	}
-	if (changeProps) {
-		const updated = [];
-		for (const vtFeature of vtFeatures) {
-			const feature = { ...vtFeature };
-			feature.tags = applyPropertyUpdates(feature.tags, update);
-			updated.push(feature);
-		}
-		return updated;
-	}
-	return vtFeatures;
-}
-/**
-* helper to apply property updates from a diff update object to a properties object
-*/
-function applyPropertyUpdates(tags, update) {
-	if (update.removeAllProperties) return {};
-	const properties = { ...tags || {} };
-	if (update.removeProperties) for (const key of update.removeProperties) delete properties[key];
-	if (update.addOrUpdateProperties) for (const { key, value } of update.addOrUpdateProperties) properties[key] = value;
-	return properties;
-}
-/**
-* Convert a GeoJSON Source Diff to an idempotent hashed representation using Sets and Maps
-*/
-function diffToHashed(diff, options) {
-	if (!diff) return {
-		remove: /* @__PURE__ */ new Set(),
-		add: /* @__PURE__ */ new Map(),
-		update: /* @__PURE__ */ new Map()
-	};
-	return {
-		removeAll: diff.removeAll,
-		remove: new Set(diff.remove || []),
-		add: new Map(diff.add?.map((feature) => [options.promoteId ? feature.properties[options.promoteId] : feature.id, feature])),
-		update: new Map(diff.update?.map((update) => [update.id, update]))
-	};
-}
 const defaultClusterOptions = {
 	minZoom: 0,
 	maxZoom: 16,
@@ -17561,7 +17587,7 @@ var ClusterTileIndex = class {
 	/**
 	* @internal
 	* Updates the cluster data by rebuilding.
-	* @param features
+	* @param features 
 	*/
 	updateIndex(features, _affected, options) {
 		this.options = Object.assign(Object.create(defaultClusterOptions), options.clusterOptions);
@@ -18053,7 +18079,6 @@ var TileIndex = class {
 	constructor(options) {
 		this.options = options;
 		this.total = 0;
-		/** @internal */
 		this.stats = {};
 		this.tiles = {};
 		this.tileCoords = [];
@@ -18141,7 +18166,7 @@ var TileIndex = class {
 	* splits features from a parent tile to sub-tiles.
 	* z, x, and y are the coordinates of the parent tile
 	* cz, cx, and cy are the coordinates of the target tile
-	*
+	* 
 	* If no target tile is specified, splitting stops when we reach the maximum
 	* zoom or the number of points is low as specified in the options.
 	* @internal
@@ -18208,15 +18233,15 @@ var TileIndex = class {
 			let bl = null;
 			let tr = null;
 			let br = null;
-			const left = clip(features, z2, x - k1, x + k3, AxisType.X, tile.minX, tile.maxX, options);
-			const right = clip(features, z2, x + k2, x + k4, AxisType.X, tile.minX, tile.maxX, options);
+			const left = clip(features, z2, x - k1, x + k3, 0, tile.minX, tile.maxX, options);
+			const right = clip(features, z2, x + k2, x + k4, 0, tile.minX, tile.maxX, options);
 			if (left) {
-				tl = clip(left, z2, y - k1, y + k3, AxisType.Y, tile.minY, tile.maxY, options);
-				bl = clip(left, z2, y + k2, y + k4, AxisType.Y, tile.minY, tile.maxY, options);
+				tl = clip(left, z2, y - k1, y + k3, 1, tile.minY, tile.maxY, options);
+				bl = clip(left, z2, y + k2, y + k4, 1, tile.minY, tile.maxY, options);
 			}
 			if (right) {
-				tr = clip(right, z2, y - k1, y + k3, AxisType.Y, tile.minY, tile.maxY, options);
-				br = clip(right, z2, y + k2, y + k4, AxisType.Y, tile.minY, tile.maxY, options);
+				tr = clip(right, z2, y - k1, y + k3, 1, tile.minY, tile.maxY, options);
+				br = clip(right, z2, y + k2, y + k4, 1, tile.minY, tile.maxY, options);
 			}
 			if (debug > 1) console.timeEnd("clipping");
 			stack.push(tl || [], z + 1, x * 2, y * 2);
@@ -18228,7 +18253,7 @@ var TileIndex = class {
 	/**
 	* Invalidates (removes) tiles affected by the provided features
 	* @internal
-	* @param features
+	* @param features 
 	*/
 	invalidateTiles(features) {
 		if (!features.length) return;
@@ -19799,7 +19824,7 @@ var PbfWriter = class {
 	/**
 	* @param {Uint8Array | ArrayBuffer} [buf]
 	*/
-	constructor(buf = new Uint8Array(16)) {
+	constructor(buf = /* @__PURE__ */ new Uint8Array(16)) {
 		this.buf = ArrayBuffer.isView(buf) ? buf : new Uint8Array(buf);
 		this.dataView = new DataView(this.buf.buffer);
 		this.pos = 0;
@@ -22119,6 +22144,7 @@ var FeatureTable = class {
 		this._idVector = _idVector;
 		this._propertyVectors = _propertyVectors;
 		this._extent = _extent;
+		if (_name.length === 0) throw new Error("Missing layer name");
 	}
 	get name() {
 		return this._name;
@@ -22252,7 +22278,7 @@ var PhysicalLevelTechnique;
 * Bit masks for each bitwidth 0-32.
 * DO NOT MUTATE - this is a shared constant.
 */
-const masks = new Uint32Array(33);
+const masks = /* @__PURE__ */ new Uint32Array(33);
 masks[0] = 0;
 for (let bitWidth = 1; bitWidth <= 32; bitWidth++) masks[bitWidth] = bitWidth === 32 ? 4294967295 : 4294967295 >>> 32 - bitWidth;
 const MASKS = masks;
@@ -24429,7 +24455,10 @@ function decodeSignedConstInt64Stream(data, offset, streamMetadata) {
 }
 function decodeUnsignedConstInt64Stream(data, offset, streamMetadata) {
 	const values = decodeVarintInt64(data, offset, streamMetadata.numValues);
-	if (values.length === 1) return values[0];
+	if (values.length === 1) {
+		if (streamMetadata.logicalLevelTechnique1 === LogicalLevelTechnique.DELTA) return decodeZigZagInt64Value(values[0]);
+		return values[0];
+	}
 	return decodeUnsignedConstRleInt64(values);
 }
 /**
@@ -25993,6 +26022,7 @@ function decodeEmbeddedTileSetMetadata(bytes, offset) {
 	meta.featureTables = [];
 	const table = {};
 	table.name = decodeString(bytes, offset);
+	if (table.name.length === 0) throw new Error("Missing layer name");
 	const extent = decodeVarintInt32(bytes, offset, 1)[0] >>> 0;
 	const columnCount = decodeVarintInt32(bytes, offset, 1)[0] >>> 0;
 	table.columns = new Array(columnCount);
@@ -26066,7 +26096,7 @@ function decodeTile(tile, geometryScaling, idWithinMaxSafeInteger = true) {
 }
 function decodeIdColumn(tile, columnMetadata, offset, columnName, idDataStreamMetadata, sizeOrNullabilityBuffer, idWithinMaxSafeInteger = false) {
 	const scalarTypeMetadata = columnMetadata.scalarType;
-	if (!scalarTypeMetadata || scalarTypeMetadata.type !== "logicalType" || scalarTypeMetadata.logicalType !== LogicalScalarType.ID) throw new Error(`ID column must be a logical ID scalar type: ${columnName}`);
+	if (scalarTypeMetadata?.type !== "logicalType" || scalarTypeMetadata.logicalType !== LogicalScalarType.ID) throw new Error(`ID column must be a logical ID scalar type: ${columnName}`);
 	const idDataType = scalarTypeMetadata.longID ? ScalarType.UINT_64 : ScalarType.UINT_32;
 	const nullabilityBuffer = typeof sizeOrNullabilityBuffer === "number" ? void 0 : sizeOrNullabilityBuffer;
 	const vectorType = getVectorType(idDataStreamMetadata, sizeOrNullabilityBuffer, tile, offset, idDataType === ScalarType.UINT_64 ? "int64" : "int32");
@@ -27600,33 +27630,6 @@ var GlyphAtlas = class {
 };
 register("GlyphAtlas", GlyphAtlas);
 //#endregion
-//#region node_modules/@mapbox/whoots-js/index.mjs
-/**
-* getTileBBox
-*
-* @param    {Number}  x  Tile coordinate x
-* @param    {Number}  y  Tile coordinate y
-* @param    {Number}  z  Tile zoom
-* @returns  {String}  String of the bounding box
-*/
-function getTileBBox(x, y, z) {
-	y = Math.pow(2, z) - y - 1;
-	var min = getMercCoords(x * 256, y * 256, z), max = getMercCoords((x + 1) * 256, (y + 1) * 256, z);
-	return min[0] + "," + min[1] + "," + max[0] + "," + max[1];
-}
-/**
-* getMercCoords
-*
-* @param    {Number}  x  Pixel coordinate x
-* @param    {Number}  y  Pixel coordinate y
-* @param    {Number}  z  Tile zoom
-* @returns  {Array}   [x, y]
-*/
-function getMercCoords(x, y, z) {
-	var resolution = 2 * Math.PI * 6378137 / 256 / Math.pow(2, z);
-	return [x * resolution - 2 * Math.PI * 6378137 / 2, y * resolution - 2 * Math.PI * 6378137 / 2];
-}
-//#endregion
 //#region src/geo/lng_lat.ts
 const earthRadius = 6371008.8;
 /**
@@ -28071,6 +28074,24 @@ function calculateTileKey(wrap, overscaledZ, z, x, y) {
 	if (wrap < 0) wrap = wrap * -1 - 1;
 	const dim = 1 << z;
 	return (dim * dim * wrap + dim * y + x).toString(36) + z.toString(36) + overscaledZ.toString(36);
+}
+const EPSG3857_HALF_CIRCUMFERENCE = Math.PI * 6378137;
+/**
+* Builds the `{bbox-epsg-3857}` token used in WMS tile URLs: the tile's bounding
+* box in EPSG:3857 meters as a `minX,minY,maxX,maxY` string.
+*
+* Inlined from the archived \@mapbox/whoots-js (ISC, Copyright (c) 2017 Mapbox).
+*/
+function getTileBBox(x, y, z) {
+	y = Math.pow(2, z) - y - 1;
+	const min = getEpsg3857Coords(x * 256, y * 256, z);
+	const max = getEpsg3857Coords((x + 1) * 256, (y + 1) * 256, z);
+	return `${min[0]},${min[1]},${max[0]},${max[1]}`;
+}
+/** Projects tile pixel coordinates to EPSG:3857 meters. */
+function getEpsg3857Coords(x, y, z) {
+	const resolution = 2 * EPSG3857_HALF_CIRCUMFERENCE / 256 / Math.pow(2, z);
+	return [x * resolution - EPSG3857_HALF_CIRCUMFERENCE, y * resolution - EPSG3857_HALF_CIRCUMFERENCE];
 }
 function getQuadkey(z, x, y) {
 	let quadkey = "";
