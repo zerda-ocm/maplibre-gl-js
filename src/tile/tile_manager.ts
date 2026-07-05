@@ -520,6 +520,7 @@ export class TileManager extends Evented {
                 reparseOverscaled: this._source.reparseOverscaled,
                 terrain,
                 calculateTileZoom: this._source.calculateTileZoom,
+                enableGlobeZoomReduction: (this._source as any)._options?.enableGlobeZoomReduction
             });
 
             if (this._source.hasTile) { // tile should be in bounds

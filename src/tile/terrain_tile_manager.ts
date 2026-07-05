@@ -101,7 +101,8 @@ export class TerrainTileManager extends Evented {
             maxzoom: this.maxzoom,
             reparseOverscaled: false,
             terrain,
-            calculateTileZoom: this.tileManager._source.calculateTileZoom
+            calculateTileZoom: this.tileManager._source.calculateTileZoom,
+            enableGlobeZoomReduction: (this.tileManager._source as any)._options?.enableGlobeZoomReduction
         })) {
             keys[tileID.key] = true;
             this._renderableTilesKeys.push(tileID.key);

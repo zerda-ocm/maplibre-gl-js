@@ -1,6 +1,6 @@
 import {OverscaledTileID} from '../../tile/tile_id.ts';
 import {vec2, type vec4} from 'gl-matrix';
-import {MercatorCoordinate} from '../mercator_coordinate.ts';
+import {MercatorCoordinate, latFromMercatorY} from '../mercator_coordinate';
 import {degreesToRadians, scaleZoom} from '../../util/util.ts';
 
 import type {IReadonlyTransform} from '../transform_interface.ts';
@@ -40,6 +40,13 @@ export type CoveringTilesOptions = {
      * Tile size, expressed in screen pixels.
      */
     tileSize: number;
+    /**
+     * Controls latitude-based globe zoom reduction. If omitted (undefined) the reduction is disabled by default.
+     * If set to `true` the reduction is enabled for all zooms (legacy boolean behavior).
+    * If set to a number `n`, the reduction is enabled only when the computed covering zoom level is less than or equal to `n`.
+     * Setting to `false` disables the reduction.
+     */
+    enableGlobeZoomReduction?: boolean | number;
 };
 
 export type CoveringTilesOptionsInternal = CoveringTilesOptions & {
@@ -188,7 +195,7 @@ export function coveringTiles(transform: IReadonlyTransform, options: CoveringTi
     cameraCoord.z = centerCoord.z + Math.cos(transform.pitchInRadians) * transform.cameraToCenterDistance / transform.worldSize;
     const detailsProvider = transform.getCoveringTilesDetailsProvider();
     const allowVariableZoom = detailsProvider.allowVariableZoom(transform, options);
-    
+
     const desiredZ = coveringZoomLevel(transform, options);
     const minZoom = options.minzoom || 0;
     const maxZoom = options.maxzoom !== undefined ? options.maxzoom : transform.maxZoom;
@@ -254,6 +261,36 @@ export function coveringTiles(transform: IReadonlyTransform, options: CoveringTi
                 distanceToCenter3d,
                 transform.fov);
         }
+
+        // For globe-like projections (no world copies), reduce requested zoom near the poles so
+        // tiles closer to the poles are loaded at a lower LOD. At the equator the reduction is 0,
+        // and at the poles it reduces by up to `maxGlobeZoomReduction` zoom levels.
+        // This mimics loading lower-resolution tiles near the pole where tiles appear much smaller.
+        const globeZoomReductionCfg = options.enableGlobeZoomReduction;
+        let applyGlobeZoomReduction = false;
+        if (!detailsProvider.allowWorldCopies()) {
+            if (globeZoomReductionCfg === true) {
+                applyGlobeZoomReduction = true;
+            } else if (typeof globeZoomReductionCfg === 'number') {
+                // Apply reduction only when the computed covering zoom level is less than or equal to the configured threshold
+                applyGlobeZoomReduction = desiredZ <= globeZoomReductionCfg;
+            } else {
+                applyGlobeZoomReduction = false;
+            }
+        }
+
+        if (applyGlobeZoomReduction) {
+            const maxGlobeZoomReduction = 2.0; // maximum zoom-level reduction at the poles
+            // Compute tile center latitude from tile coordinates
+            const tileScale = 1 << it.zoom;
+            const tileCenterY = (it.y + 0.5) / tileScale;
+            const lat = latFromMercatorY(tileCenterY);
+            const absLat = Math.abs(lat);
+            // Use a cosine-based falloff: at equator (0°) reduction=0, at poles (90°) reduction=max
+            const reduction = maxGlobeZoomReduction * (1 - Math.cos(degreesToRadians(absLat)));
+            thisTileDesiredZ -= reduction;
+        }
+
         thisTileDesiredZ = (options.roundZoom ? Math.round : Math.floor)(thisTileDesiredZ);
         thisTileDesiredZ = Math.max(0, thisTileDesiredZ);
         const z = Math.min(thisTileDesiredZ, maxZoom);

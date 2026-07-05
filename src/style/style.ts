@@ -41,7 +41,11 @@ const emitValidationErrors = (evented: Evented, errors?: ReadonlyArray<{
     message: string;
     identifier?: string;
 }> | null) =>
-    _emitValidationErrors(evented, errors?.filter(error => error.identifier !== 'source.canvas'));
+    _emitValidationErrors(evented, errors?.filter(error =>
+        error.identifier !== 'source.canvas' &&
+        // allow unknown property for enableGlobeZoomReduction in source definitions
+        !error.message?.includes('unknown property "enableGlobeZoomReduction"')
+    ));
 
 import type {Map} from '../ui/map.ts';
 import type {IReadonlyTransform, ITransform} from '../geo/transform_interface.ts';
