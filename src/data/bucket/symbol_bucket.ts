@@ -648,7 +648,15 @@ export class SymbolBucket implements Bucket {
         if (layout.get('symbol-placement') === 'line') {
             // Merge adjacent lines with the same text to improve labeling.
             // It's better to place labels on one long line than on many short segments.
-            this.features = mergeLines(this.features);
+            // Get the ID of the layer currently being processed
+            const layerId = this.layers[0]?.id || '';
+
+            // Disable merging if the layer is explicitly a dot or highlight layer
+            const isDotOrHighlightLayer = layerId.includes('dots') || layerId.includes('highlight');
+
+            if (!isDotOrHighlightLayer) {
+                this.features = mergeLines(this.features);
+            }
         }
 
         if (this.sortFeaturesByKey) {
