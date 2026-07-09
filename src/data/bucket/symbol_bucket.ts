@@ -595,7 +595,7 @@ export class SymbolBucket implements Bucket {
                     geometry: evaluationFeature.geometry,
                     properties: feature.properties,
                     type: VectorTileFeature.types[feature.type],
-                    sortKey: secondarySortKey,
+                    sortKey,
                     isTextField2: false
                 };
                 this.features.push(primaryFeature);
@@ -611,7 +611,7 @@ export class SymbolBucket implements Bucket {
                     geometry: evaluationFeature.geometry,
                     properties: feature.properties,
                     type: VectorTileFeature.types[feature.type],
-                    sortKey,
+                    sortKey: secondarySortKey,
                     isTextField2: true
                 };
                 this.features.push(secondaryFeature);
