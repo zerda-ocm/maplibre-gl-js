@@ -1,0 +1,171 @@
+# Isolated Composite Groups & Layer Masking
+
+This guide describes how to use the custom isolated composite groups, blending, and layer masking system in your MapLibre styles.
+
+By rendering layers together in an offscreen framebuffer before compositing them onto the map, you can apply complex graphic design blend modes (e.g., `multiply`, `screen`, `overlay`) and vector layer masks without interference from the map background.
+
+---
+
+## Key Core Properties
+
+To implement composition and masking, three properties are added to the style layer specification:
+
+| Property | Level | Type | Description |
+| :--- | :--- | :--- | :--- |
+| **`composite-group`** | Layer Root | `string` | An arbitrary identifier. All layers sharing the same `composite-group` string will render to an isolated offscreen buffer. |
+| **`composite-mask`** | Layer Root | `boolean` | If set to `true`, this layer acts as an alpha clipping mask for all other (non-mask) layers inside the same group. |
+| **`<type>-blend-mode`** | Layer Paint | `enum` | Defines how the layer blends with other layers *inside* the composite group. E.g., `"fill-blend-mode"` or `"line-blend-mode"`. |
+
+### Supported Blend Modes
+Inside a `composite-group`, you can use standard blend modes or Porter-Duff compositing operators:
+* `normal` (default)
+* `multiply`, `screen`, `overlay`, `darken`, `lighten`
+* `source-in`, `source-out`, `source-atop`
+* `destination-in`, `destination-out`
+* **`mask`** (Path B: Acts as a specialized alias to isolate the layer as a robust, order-independent clipping mask)
+
+---
+
+## How Masking Works
+
+There are two primary ways to clip a group of layers using a vector shape:
+
+### Approach A: The `"mask"` Blend Mode (Order-Independent)
+Setting the layer's blend mode to `"mask"` (e.g. `"fill-blend-mode": "mask"`) automatically designates the layer as a clipping mask.
+
+* **Advantage:** The mask layer can be placed **anywhere in your style sheet stack** (even at the bottom of the group list). The rendering engine automatically identifies it, separates it into a distinct pass, and clips the rest of the group to its alpha profile.
+
+### Approach B: Standard `"destination-in"` Blend Mode (Strict Ordering)
+If you do not want the engine to use a separate offscreen mask buffer, you can use `"fill-blend-mode": "destination-in"`.
+
+* **Requirement:** The mask layer **must be placed at the very top of your group** (rendered last). It will clip whatever has already been drawn in the buffer directly beneath it.
+
+---
+
+## MapLibre Style JSON Examples
+
+### Example 1: Alpha Clipping Mask (Path B `"mask"` Blend Mode)
+In this example, we have a city boundary shape and a complex striped pattern of line work. We want the striped pattern to render **only** inside the city boundary, without showing the white boundary polygon itself on the map.
+
+Because we are using `"fill-blend-mode": "mask"`, the boundary layer acts as a clipping mask, regardless of layer order.
+
+```json
+{
+  "version": 8,
+  "sources": {
+    "vector-map": {
+      "type": "vector",
+      "url": "mapbox://mapbox.mapbox-streets-v8"
+    }
+  },
+  "layers": [
+    {
+      "id": "background",
+      "type": "background",
+      "paint": {
+        "background-color": "#111111"
+      }
+    },
+    {
+      "id": "city-mask-boundary",
+      "type": "fill",
+      "source": "vector-map",
+      "source-layer": "boundary",
+      "filter": ["==", "city", "Seattle"],
+      "composite-group": "seattle-clipper",
+      "paint": {
+        "fill-color": "#ffffff",
+        "fill-blend-mode": "mask"
+      }
+    },
+    {
+      "id": "complex-road-patterns",
+      "type": "line",
+      "source": "vector-map",
+      "source-layer": "road",
+      "composite-group": "seattle-clipper",
+      "paint": {
+        "line-color": "#ff0077",
+        "line-width": 3,
+        "line-opacity": 0.8
+      }
+    }
+  ]
+}
+```
+
+---
+
+### Example 2: Knockout / Clipping Holes (`"destination-out"`)
+In this example, we want to cut clean "holes" through a dark overlay layer using building shapes, revealing the base map beneath.
+
+```json
+{
+  "version": 8,
+  "sources": {
+    "vector-map": {
+      "type": "vector",
+      "url": "mapbox://mapbox.mapbox-streets-v8"
+    }
+  },
+  "layers": [
+    {
+      "id": "satellite-base",
+      "type": "raster",
+      "source": "satellite-source"
+    },
+    {
+      "id": "dark-shading-tint",
+      "type": "fill",
+      "source": "vector-map",
+      "source-layer": "landuse",
+      "composite-group": "knockout-group",
+      "paint": {
+        "fill-color": "#000000",
+        "fill-opacity": 0.75
+      }
+    },
+    {
+      "id": "building-cutouts",
+      "type": "fill",
+      "source": "vector-map",
+      "source-layer": "building",
+      "composite-group": "knockout-group",
+      "paint": {
+        "fill-color": "#ffffff",
+        "fill-blend-mode": "destination-out"
+      }
+    }
+  ]
+}
+```
+
+---
+
+### Example 3: Explicit Layer Root Property (`"composite-mask": true`)
+If you want to keep the paint properties separate and purely declare the layer's mask semantic at the root of the layer, you can use the `"composite-mask": true` flag:
+
+```json
+{
+  "id": "park-clipping-boundary",
+  "type": "fill",
+  "source": "vector-map",
+  "source-layer": "landuse",
+  "filter": ["==", "class", "park"],
+  "composite-group": "park-details-group",
+  "composite-mask": true,
+  "paint": {
+    "fill-color": "#ffffff"
+  }
+}
+```
+
+---
+
+## Architectural & Performance Best Practices
+
+To maintain optimal map rendering speeds when using isolated composite groups:
+
+1. **Minimize Group Lifespan:** Framebuffers are allocated on-demand based on screen dimensions and resized dynamically. Ensure that you only group the layers that strictly require compositing or clipping.
+2. **Reuse Group Names:** If multiple adjacent layers need the same compositing behavior, keep them in the same `composite-group`. The engine groups these layers during a single, precomputed translucent pass to minimize texture binding swaps on the GPU.
+3. **Use the `"mask"` Blend Mode for Clean Organization:** Using `"fill-blend-mode": "mask"` avoids rigid stacking order constraints in large stylesheets and keeps the vector rendering logic decoupled.

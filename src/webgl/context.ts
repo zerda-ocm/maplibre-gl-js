@@ -67,6 +67,8 @@ export class Context {
     extTextureFilterAnisotropic: EXT_texture_filter_anisotropic | null;
     extTextureFilterAnisotropicMax?: GLfloat;
 
+    _customBlendMode: string | null = null;
+
     constructor(gl: WebGL2RenderingContext) {
         this.gl = gl;
         this.clearColor = new ClearColor(this);
@@ -217,8 +219,6 @@ export class Context {
         if (typeof depth !== 'undefined') {
             mask |= gl.DEPTH_BUFFER_BIT;
 
-            // Workaround for platforms where clearDepth doesn't seem to work
-            // without resetting the depthRange. See https://github.com/mapbox/mapbox-gl-js/issues/3437
             this.depthRange.set([0, 1]);
 
             this.clearDepth.set(depth);
@@ -280,6 +280,70 @@ export class Context {
         }
 
         this.colorMask.set(colorMode.mask);
+
+        if (this._customBlendMode) {
+            this.setBlendMode(this._customBlendMode);
+        }
+    }
+
+    setBlendMode(blendMode: string): void {
+        const gl = this.gl;
+        this._customBlendMode = blendMode === 'normal' ? null : blendMode;
+        this.blend.set(true);
+
+        switch (blendMode) {
+            case 'multiply':
+                // Call gl.blendFuncSeparate directly to bypass the 2-tuple type check
+                gl.blendFuncSeparate(gl.DST_COLOR, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+                this.blendFunc.dirty = true;
+                this.blendEquation.set(gl.FUNC_ADD);
+                break;
+            case 'screen':
+                gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_COLOR, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+                this.blendFunc.dirty = true;
+                this.blendEquation.set(gl.FUNC_ADD);
+                break;
+            case 'overlay':
+                gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+                this.blendFunc.dirty = true;
+                this.blendEquation.set(gl.FUNC_ADD);
+                break;
+            case 'darken':
+                gl.blendFuncSeparate(gl.ONE, gl.ONE, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+                this.blendFunc.dirty = true;
+                this.blendEquation.set(gl.MIN);
+                break;
+            case 'lighten':
+                gl.blendFuncSeparate(gl.ONE, gl.ONE, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+                this.blendFunc.dirty = true;
+                this.blendEquation.set(gl.MAX);
+                break;
+            case 'source-in':
+                this.blendFunc.set([gl.DST_ALPHA, gl.ZERO]);
+                this.blendEquation.set(gl.FUNC_ADD);
+                break;
+            case 'source-out':
+                this.blendFunc.set([gl.ONE_MINUS_DST_ALPHA, gl.ZERO]);
+                this.blendEquation.set(gl.FUNC_ADD);
+                break;
+            case 'destination-out':
+                this.blendFunc.set([gl.ZERO, gl.ONE_MINUS_SRC_ALPHA]);
+                this.blendEquation.set(gl.FUNC_ADD);
+                break;
+            case 'destination-in':
+                this.blendFunc.set([gl.ZERO, gl.SRC_ALPHA]);
+                this.blendEquation.set(gl.FUNC_ADD);
+                break;
+            case 'source-atop':
+                this.blendFunc.set([gl.DST_ALPHA, gl.ONE_MINUS_SRC_ALPHA]);
+                this.blendEquation.set(gl.FUNC_ADD);
+                break;
+            case 'normal':
+            default:
+                this.blendFunc.set([gl.ONE, gl.ONE_MINUS_SRC_ALPHA]);
+                this.blendEquation.set(gl.FUNC_ADD);
+                break;
+        }
     }
 
     createVertexArray(): WebGLVertexArrayObject | undefined {
@@ -291,8 +355,6 @@ export class Context {
     }
 
     unbindVAO(): void {
-        // Unbinding the VAO prevents other things (custom layers, new buffer creation) from
-        // unintentionally changing the state of the last VAO used.
         this.bindVertexArray.set(null);
     }
 }

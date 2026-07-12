@@ -12,6 +12,7 @@ import type {OverscaledTileID} from '../../tile/tile_id.ts';
 export type PrepareDrawLayerOpacityResult = {
     compositeTarget: WebGLFramebuffer;
     compositeViewport: [number, number, number, number];
+    originalCustomBlendMode: string | null;
 };
 
 /**
@@ -25,6 +26,10 @@ export function prepareDrawLayerOpacity(painter: Painter, layer: LineStyleLayer 
     const compositeViewport = context.viewport.get();
     const [, , width, height] = compositeViewport;
 
+    // --- OPTIMIZATION: Save and temporarily suspend custom blend modes inside the empty FBO ---
+    const originalCustomBlendMode = context._customBlendMode;
+    context.setBlendMode('normal');
+
     bindLayerOpacity(painter, width, height);
 
     context.viewport.set([0, 0, width, height]);
@@ -35,7 +40,8 @@ export function prepareDrawLayerOpacity(painter: Painter, layer: LineStyleLayer 
 
     return {
         compositeTarget,
-        compositeViewport
+        compositeViewport,
+        originalCustomBlendMode
     };
 }
 
@@ -82,11 +88,18 @@ export function drawLayerOpacity(painter: Painter, opacity: number, prepareDrawL
     context.activeTexture.set(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, painter.layerOpacityFbo.colorAttachment.get());
 
+    // --- OPTIMIZATION: Restore the original custom blend mode before compositing onto the target ---
+    const originalBlendMode = prepareDrawLayerOpacityResult.originalCustomBlendMode || 'normal';
+    context.setBlendMode(originalBlendMode);
+
     painter.useProgram('layerOpacity').draw(context, gl.TRIANGLES,
         DepthMode.disabled, StencilMode.disabled, painter.colorModeForRenderPass(), CullFaceMode.disabled,
         layerOpacityUniformValues(opacity, 0), null, null,
         layer.id, painter.viewportBuffer, painter.quadTriangleIndexBuffer,
         painter.viewportSegments, layer.paint, painter.transform.zoom);
+
+    // --- OPTIMIZATION: Reset context blending back to normal to prevent pipeline bleeding ---
+    context.setBlendMode('normal');
 
     // Clipping masks were drawn into the scratch FBO's stencil buffer, not the composite target's.
     // Reset currentStencilSource so a later layer on the same source redraws its masks into the composite target instead of reusing stale ones.

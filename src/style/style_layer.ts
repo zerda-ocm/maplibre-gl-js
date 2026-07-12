@@ -86,7 +86,7 @@ const ERROR_PAINT_NOT_LAYOUT = ' is a PAINT property not a LAYOUT property. Use 
 const ERROR_LAYOUT_NOT_PAINT = ' is a LAYOUT property not a PAINT property. Use get/setLayoutProperty instead?';
 
 /**
- * A base class for style layers
+ * A style style layer base class
  */
 export abstract class StyleLayer extends Evented {
     id: string;
@@ -98,6 +98,8 @@ export abstract class StyleLayer extends Evented {
     maxzoom: number;
     filter: FilterSpecification | void;
     visibility: VisibilitySpecification;
+    compositeGroup: string | null;
+    compositeMask: boolean; // Flag used to redirect rendering into the clipping FBO
     private _evaluatedVisibility: 'visible' | 'none' | void;
 
     _crossfadeParameters: CrossfadeParameters;
@@ -120,7 +122,7 @@ export abstract class StyleLayer extends Evented {
     queryIntersectsFeature?(params: QueryIntersectsFeatureParams): boolean | number;
     createBucket?(parameters: BucketParameters<any>): Bucket;
 
-    private _globalState: Record<string, any>; // reference to global state
+    private _globalState: Record<string, any>;
 
     constructor(layer: LayerSpecification | CustomLayerInterface, properties: Readonly<{
         layout?: Properties<any>;
@@ -130,6 +132,11 @@ export abstract class StyleLayer extends Evented {
 
         this.id = layer.id;
         this.type = layer.type;
+        this.compositeGroup = (layer as any)['composite-group'] || null;
+
+        // Explicit root-level check: "composite-mask": true
+        this.compositeMask = !!(layer as any)['composite-mask'];
+
         this._globalState = globalState;
         this._featureFilter = {filter: () => true, needGeometry: false, getGlobalStateRefs: () => new Set<string>()};
         this._visibilityExpression = createVisibilityExpression(this.visibility, globalState);
@@ -164,6 +171,19 @@ export abstract class StyleLayer extends Evented {
             this._transitioningPaint = this._transitionablePaint.untransitioned();
             this.paint = new PossiblyEvaluated(properties.paint);
         }
+    }
+
+    getBlendMode(): string {
+        const paint = (this as any).paint;
+        const propName = `${this.type}-blend-mode`;
+        if (paint && typeof paint.get === 'function') {
+            try {
+                return paint.get(propName) || 'normal';
+            } catch (e) {
+                return 'normal';
+            }
+        }
+        return 'normal';
     }
 
     setFilter(filter: FilterSpecification | void): void {
@@ -368,6 +388,14 @@ export abstract class StyleLayer extends Evented {
             'layout': this._unevaluatedLayout?.serialize(),
             'paint': this._transitionablePaint?.serialize()
         };
+
+        if (this.compositeGroup) {
+            output['composite-group'] = this.compositeGroup;
+        }
+
+        if ((this as any).compositeMask) {
+            output['composite-mask'] = (this as any).compositeMask;
+        }
 
         if (this.visibility) {
             output.layout ||= {};
