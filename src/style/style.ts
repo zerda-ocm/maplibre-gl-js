@@ -735,9 +735,19 @@ export class Style extends Evented<MapEventType> {
      * @internal
      * Apply queued style updates in a batch and recalculate zoom-dependent paint properties.
      */
+    // Look inside your style.ts file and update the update(parameters) method to match:
+
     update(parameters: EvaluationParameters): void {
         if (!this._loaded) {
             return;
+        }
+
+        const globalWindow = window as any;
+        const isBenchmarking = globalWindow.maplibreBenchmark;
+
+        // Optionally flush WebGL pipeline to prevent previous-frame asynchronous rendering bias
+        if (isBenchmarking && this.map && (this.map as any).painter && (this.map as any).painter.context && (this.map as any).painter.context.gl) {
+            (this.map as any).painter.context.gl.finish();
         }
 
         const changed = this._changed;
@@ -794,7 +804,22 @@ export class Style extends Evented<MapEventType> {
         for (const layerId of this._order) {
             const layer = this._layers[layerId];
 
+            const start = isBenchmarking ? performance.now() : 0;
+
             layer.recalculate(parameters, this._availableImages);
+
+            if (isBenchmarking) {
+                const duration = performance.now() - start;
+                if (!globalWindow.recalcTimings) {
+                    globalWindow.recalcTimings = {};
+                }
+                if (!globalWindow.recalcTimings[layer.id]) {
+                    globalWindow.recalcTimings[layer.id] = { total: 0, count: 0 };
+                }
+                globalWindow.recalcTimings[layer.id].total += duration;
+                globalWindow.recalcTimings[layer.id].count += 1;
+            }
+
             if (!layer.isHidden(parameters.zoom) && layer.source) {
                 this.tileManagers[layer.source].used = true;
             }

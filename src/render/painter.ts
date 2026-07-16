@@ -450,6 +450,14 @@ export class Painter {
     }
 
     render(style: Style, options: PainterOptions): void {
+
+        const globalWindow = window as any;
+
+        // Flush the GPU queue from the previous frame before we start any timers
+        if (globalWindow.maplibreBenchmark && this.context && this.context.gl) {
+            this.context.gl.finish();
+        }
+        
         this.style = style;
         this.options = options;
 
@@ -644,8 +652,26 @@ export class Painter {
     renderLayer(painter: Painter, tileManager: TileManager, layer: StyleLayer, coords: OverscaledTileID[], renderOptions: RenderOptions): void {
         if (layer.isHidden(this.transform.zoom)) return;
         if (layer.type !== 'background' && layer.type !== 'custom' && !(coords || []).length) return;
+        
+        // Check if benchmarking is enabled. We cache the check on 'window' to avoid 
+        // repeatedly querying localStorage every frame, ensuring zero normal runtime overhead.
+        const globalWindow = window as any;
+        if (globalWindow.maplibreBenchmark === undefined) {
+            globalWindow.maplibreBenchmark = typeof localStorage !== 'undefined' && localStorage.getItem('maplibre-benchmark') === 'true';
+        }
+        const isBenchmarking = globalWindow.maplibreBenchmark;
+    
+        let start = 0;
+        let gl: any = null;
+    
+        if (isBenchmarking) {
+            gl = painter.context.gl;
+            gl.finish();
+            start = performance.now();
+        }
+    
         this.id = layer.id;
-
+    
         const draw = this.drawFunctions;
         if (isSymbolStyleLayer(layer)) {
             draw.symbol(painter, tileManager, layer, coords, this.style.placement.variableOffsets, renderOptions);
@@ -669,6 +695,20 @@ export class Painter {
             draw.background(painter, tileManager, layer, coords, renderOptions);
         } else if (isCustomStyleLayer(layer)) {
             draw.custom(painter, tileManager, layer, renderOptions);
+        }
+    
+        if (isBenchmarking) {
+            gl.finish();
+            const duration = performance.now() - start;
+        
+            if (!globalWindow.layerTimings) {
+                globalWindow.layerTimings = {};
+            }
+            if (!globalWindow.layerTimings[layer.id]) {
+                globalWindow.layerTimings[layer.id] = { total: 0, count: 0 };
+            }
+            globalWindow.layerTimings[layer.id].total += duration;
+            globalWindow.layerTimings[layer.id].count += 1;
         }
     }
 

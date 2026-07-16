@@ -115,6 +115,34 @@ export function deserialize(input: Bucket[], style: Style): {[_: string]: Bucket
             continue;
         }
 
+        // Dynamically patch bucket's upload method to capture WebGL buffer upload latency
+        const originalUpload = bucket.upload;
+        if (originalUpload && !(originalUpload as any).isInstrumented) {
+            bucket.upload = function(context: Context) {
+                const globalWindow = window as any;
+                const isBenchmarking = globalWindow.maplibreBenchmark;
+                const start = isBenchmarking ? performance.now() : 0;
+
+                originalUpload.call(this, context);
+
+                if (isBenchmarking) {
+                    const duration = performance.now() - start;
+                    if (!globalWindow.uploadTimings) {
+                        globalWindow.uploadTimings = {};
+                    }
+                    const layerId = this.layerIds[0];
+                    if (layerId) {
+                        if (!globalWindow.uploadTimings[layerId]) {
+                            globalWindow.uploadTimings[layerId] = { total: 0, count: 0 };
+                        }
+                        globalWindow.uploadTimings[layerId].total += duration;
+                        globalWindow.uploadTimings[layerId].count += 1;
+                    }
+                }
+            };
+            (bucket.upload as any).isInstrumented = true;
+        }
+
         // look up StyleLayer objects from layer ids (since we don't
         // want to waste time serializing/copying them from the worker)
         (bucket as any).layers = layers;

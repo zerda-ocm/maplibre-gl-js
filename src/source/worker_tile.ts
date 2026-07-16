@@ -24,6 +24,7 @@ import type {PromoteIdSpecification} from '@maplibre/maplibre-gl-style-spec';
 import type {VectorTileLike} from '@maplibre/vt-pbf';
 import {type GetDashesResponse, MessageType, type GetGlyphsResponse, type GetImagesResponse} from '../util/actor_messages.ts';
 import type {SubdivisionGranularitySetting} from '../render/subdivision_granularity_settings.ts';
+
 export class WorkerTile {
     tileID: OverscaledTileID;
     uid: string | number;
@@ -63,6 +64,8 @@ export class WorkerTile {
     async parse(data: VectorTileLike, layerIndex: StyleLayerIndex, availableImages: string[], actor: IActor, subdivisionGranularity: SubdivisionGranularitySetting): Promise<WorkerTileResult> {
         this.status = 'parsing';
         this.data = data;
+
+        const parsingTimings: {[_: string]: number} = {};
 
         this.collisionBoxArray = new CollisionBoxArray();
         const sourceLayerCoder = new DictionaryCoder(Object.keys(data.layers).sort());
@@ -122,13 +125,15 @@ export class WorkerTile {
                     sourceID: this.source
                 });
 
+                const startPopulate = performance.now();
                 bucket.populate(features, options, this.tileID.canonical);
+                const durationPopulate = performance.now() - startPopulate;
+                parsingTimings[layer.id] = (parsingTimings[layer.id] || 0) + durationPopulate;
+
                 featureIndex.bucketLayerIDs.push(family.map((l) => l.id));
             }
         }
 
-        // options.glyphDependencies looks like: {"SomeFontName":{"10":true,"32":true}}
-        // this line makes an object like: {"SomeFontName":[10,32]}
         const stacks: {[_: string]: number[]} = mapObject(options.glyphDependencies, (glyphs) => Object.keys(glyphs).map(Number));
 
         for (const request of this.inFlightDependencies) {
@@ -176,6 +181,7 @@ export class WorkerTile {
             const bucket = buckets[key];
             if (bucket instanceof SymbolBucket) {
                 recalculateLayers(bucket.layers, this.zoom, availableImages);
+                const startLayout = performance.now();
                 performSymbolLayout({
                     bucket,
                     glyphMap,
@@ -186,9 +192,14 @@ export class WorkerTile {
                     canonical: this.tileID.canonical,
                     subdivisionGranularity: options.subdivisionGranularity
                 });
+                const durationLayout = performance.now() - startLayout;
+                parsingTimings[key] = (parsingTimings[key] || 0) + durationLayout;
             } else if (bucket.hasDependencies && (bucket instanceof FillBucket || bucket instanceof FillExtrusionBucket || bucket instanceof LineBucket)) {
                 recalculateLayers(bucket.layers, this.zoom, availableImages);
+                const startAddFeatures = performance.now();
                 bucket.addFeatures(options, this.tileID.canonical, imageAtlas.patternPositions, dashPositions);
+                const durationAddFeatures = performance.now() - startAddFeatures;
+                parsingTimings[key] = (parsingTimings[key] || 0) + durationAddFeatures;
             }
         }
 
@@ -200,7 +211,7 @@ export class WorkerTile {
             glyphAtlasImage: glyphAtlas.image,
             imageAtlas,
             dashPositions,
-            // Only used for benchmarking:
+            parsingTimings,
             glyphMap: this.returnDependencies ? glyphMap : null,
             iconMap: this.returnDependencies ? iconMap : null,
             glyphPositions: this.returnDependencies ? glyphAtlas.positions : null
@@ -209,7 +220,6 @@ export class WorkerTile {
 }
 
 function recalculateLayers(layers: readonly StyleLayer[], zoom: number, availableImages: string[]) {
-    // Layers are shared and may have been used by a WorkerTile with a different zoom.
     const parameters = new EvaluationParameters(zoom);
     for (const layer of layers) {
         layer.recalculate(parameters, availableImages);

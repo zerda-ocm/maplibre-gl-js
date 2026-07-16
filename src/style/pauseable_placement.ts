@@ -109,7 +109,25 @@ export class PauseablePlacement {
 
                 this._inProgressLayer ||= new LayerPlacement(layer);
 
+                // Setup layout benchmark parameters dynamically
+                const globalWindow = window as any;
+                const isBenchmarking = globalWindow.maplibreBenchmark;
+                const start = isBenchmarking ? performance.now() : 0;
+
                 const pausePlacement = this._inProgressLayer.continuePlacement(layerTiles[layer.source], this.placement, this._showCollisionBoxes, layer, shouldPausePlacement);
+
+                // Calculate layout positioning duration if benchmarking is active
+                if (isBenchmarking) {
+                    const duration = performance.now() - start;
+                    if (!globalWindow.layoutTimings) {
+                        globalWindow.layoutTimings = {};
+                    }
+                    if (!globalWindow.layoutTimings[layer.id]) {
+                        globalWindow.layoutTimings[layer.id] = { total: 0, count: 0 };
+                    }
+                    globalWindow.layoutTimings[layer.id].total += duration;
+                    globalWindow.layoutTimings[layer.id].count += 1;
+                }
 
                 if (pausePlacement) {
                     // We didn't finish placing all layers within 2ms,
