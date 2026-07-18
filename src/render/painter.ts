@@ -457,7 +457,7 @@ export class Painter {
         if (globalWindow.maplibreBenchmark && this.context && this.context.gl) {
             this.context.gl.finish();
         }
-        
+
         this.style = style;
         this.options = options;
 
@@ -584,11 +584,11 @@ export class Painter {
 
                 const group = compositeGroups[layer.compositeGroup];
                 this.renderCompositeGroup(
-                    group.layers, 
-                    group.indices, 
-                    renderOptions, 
-                    coordsAscending, 
-                    coordsDescending, 
+                    group.layers,
+                    group.indices,
+                    renderOptions,
+                    coordsAscending,
+                    coordsDescending,
                     coordsDescendingSymbol
                 );
                 renderedGroups.add(layer.compositeGroup);
@@ -652,26 +652,26 @@ export class Painter {
     renderLayer(painter: Painter, tileManager: TileManager, layer: StyleLayer, coords: OverscaledTileID[], renderOptions: RenderOptions): void {
         if (layer.isHidden(this.transform.zoom)) return;
         if (layer.type !== 'background' && layer.type !== 'custom' && !(coords || []).length) return;
-        
-        // Check if benchmarking is enabled. We cache the check on 'window' to avoid 
+
+        // Check if benchmarking is enabled. We cache the check on 'window' to avoid
         // repeatedly querying localStorage every frame, ensuring zero normal runtime overhead.
         const globalWindow = window as any;
         if (globalWindow.maplibreBenchmark === undefined) {
             globalWindow.maplibreBenchmark = typeof localStorage !== 'undefined' && localStorage.getItem('maplibre-benchmark') === 'true';
         }
         const isBenchmarking = globalWindow.maplibreBenchmark;
-    
+
         let start = 0;
         let gl: any = null;
-    
+
         if (isBenchmarking) {
             gl = painter.context.gl;
             gl.finish();
             start = performance.now();
         }
-    
+
         this.id = layer.id;
-    
+
         const draw = this.drawFunctions;
         if (isSymbolStyleLayer(layer)) {
             draw.symbol(painter, tileManager, layer, coords, this.style.placement.variableOffsets, renderOptions);
@@ -696,11 +696,11 @@ export class Painter {
         } else if (isCustomStyleLayer(layer)) {
             draw.custom(painter, tileManager, layer, renderOptions);
         }
-    
+
         if (isBenchmarking) {
             gl.finish();
             const duration = performance.now() - start;
-        
+
             if (!globalWindow.layerTimings) {
                 globalWindow.layerTimings = {};
             }
@@ -776,7 +776,7 @@ export class Painter {
                 const blendMode = layer.getBlendMode();
                 const actualBlendMode = (blendMode === 'mask') ? 'normal' : blendMode;
                 this.context.setBlendMode(actualBlendMode);
-                
+
                 this.renderPass = 'opaque';
                 this.renderLayer(this, tileManagers[layer.source], layer, coords, renderOptions);
 
@@ -940,6 +940,10 @@ export class Painter {
             this.quadTriangleIndexBuffer,
             this.rasterBoundsSegments
         );
+
+        // --- OPTIMIZATION: Clear texture binding cache to safeguard other layers ---
+        context.activeTexture.set(gl.TEXTURE0);
+        context.bindTexture.set(null);
     }
 
     static readonly MAX_TEXTURE_POOL_SIZE_PER_BUCKET = 50;

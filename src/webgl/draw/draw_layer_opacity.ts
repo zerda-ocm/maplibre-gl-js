@@ -26,7 +26,6 @@ export function prepareDrawLayerOpacity(painter: Painter, layer: LineStyleLayer 
     const compositeViewport = context.viewport.get();
     const [, , width, height] = compositeViewport;
 
-    // --- OPTIMIZATION: Save and temporarily suspend custom blend modes inside the empty FBO ---
     const originalCustomBlendMode = context._customBlendMode;
     context.setBlendMode('normal');
 
@@ -47,35 +46,42 @@ export function prepareDrawLayerOpacity(painter: Painter, layer: LineStyleLayer 
 
 function bindLayerOpacity(painter: Painter, width: number, height: number): void {
     const gl = painter.context.gl;
+    const context = painter.context;
 
     if (!painter.layerOpacityFbo) {
-        const fbo = painter.context.createFramebuffer(width, height, true, true);
+        const fbo = context.createFramebuffer(width, height, true, true);
         const texture = gl.createTexture();
-        gl.bindTexture(gl.TEXTURE_2D, texture);
+
+        // Use the cache-safe binder to keep WebGL state tracking in sync
+        context.bindTexture.set(texture);
+
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
         fbo.colorAttachment.set(texture);
-        fbo.depthAttachment.set(painter.context.createRenderbuffer(gl.DEPTH_STENCIL, width, height));
+        fbo.depthAttachment.set(context.createRenderbuffer(gl.DEPTH_STENCIL, width, height));
         painter.layerOpacityFbo = fbo;
-        painter.context.bindFramebuffer.set(painter.layerOpacityFbo.framebuffer);
+        context.bindFramebuffer.set(painter.layerOpacityFbo.framebuffer);
         return;
     }
     if (painter.layerOpacityFbo.width === width && painter.layerOpacityFbo.height === height) {
-        painter.context.bindFramebuffer.set(painter.layerOpacityFbo.framebuffer);
+        context.bindFramebuffer.set(painter.layerOpacityFbo.framebuffer);
         return;
     }
     const fbo = painter.layerOpacityFbo;
-    gl.bindTexture(gl.TEXTURE_2D, fbo.colorAttachment.get());
+
+    // Use the cache-safe binder to keep WebGL state tracking in sync
+    context.bindTexture.set(fbo.colorAttachment.get());
+
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-    painter.context.bindRenderbuffer.set(fbo.depthAttachment.get());
+    context.bindRenderbuffer.set(fbo.depthAttachment.get());
     gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_STENCIL, width, height);
-    painter.context.bindRenderbuffer.set(null);
+    context.bindRenderbuffer.set(null);
     fbo.width = width;
     fbo.height = height;
-    painter.context.bindFramebuffer.set(fbo.framebuffer);
+    context.bindFramebuffer.set(fbo.framebuffer);
 }
 
 export function drawLayerOpacity(painter: Painter, opacity: number, prepareDrawLayerOpacityResult: PrepareDrawLayerOpacityResult, layer: LineStyleLayer | FillStyleLayer): void {
@@ -86,9 +92,9 @@ export function drawLayerOpacity(painter: Painter, opacity: number, prepareDrawL
     context.viewport.set(prepareDrawLayerOpacityResult.compositeViewport);
 
     context.activeTexture.set(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, painter.layerOpacityFbo.colorAttachment.get());
+    context.bindTexture.set(painter.layerOpacityFbo.colorAttachment.get());
 
-    // --- OPTIMIZATION: Restore the original custom blend mode before compositing onto the target ---
+    // Restore the original custom blend mode before we composite onto the target
     const originalBlendMode = prepareDrawLayerOpacityResult.originalCustomBlendMode || 'normal';
     context.setBlendMode(originalBlendMode);
 
@@ -98,8 +104,12 @@ export function drawLayerOpacity(painter: Painter, opacity: number, prepareDrawL
         layer.id, painter.viewportBuffer, painter.quadTriangleIndexBuffer,
         painter.viewportSegments, layer.paint, painter.transform.zoom);
 
-    // --- OPTIMIZATION: Reset context blending back to normal to prevent pipeline bleeding ---
+    // Reset context blending back to normal to prevent pipeline bleeding
     context.setBlendMode('normal');
+
+    // Clear texture binding cache to safeguard other layers ---
+    context.activeTexture.set(gl.TEXTURE0);
+    context.bindTexture.set(null);
 
     // Clipping masks were drawn into the scratch FBO's stencil buffer, not the composite target's.
     // Reset currentStencilSource so a later layer on the same source redraws its masks into the composite target instead of reusing stale ones.
